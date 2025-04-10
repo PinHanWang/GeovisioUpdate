@@ -81,16 +81,14 @@ if __name__ == '__main__':
         20250319114434_000030A(這部到01:15)
     """
     
-    SOURCE = Path(r"E:\DCIM\Movie")
+    SOURCE = Path(r"H:\DCIM\Movie")
 
     # Step1: 手動定義上傳路線(相關資訊妤玲會給)
-    startSec = 90  # 01:30 = 90秒(如果沒寫開始時間可以不用給)
-    endSec = 75  # 01:15 = 75秒(如果沒寫結束時間可以不用給)
+    startSec = None  # 01:30 = 90秒(如果沒寫開始時間可以不用給)
+    endSec = None  # 01:15 = 75秒(如果沒寫結束時間可以不用給)
     videos = [
-        "20250319112934_000027A",
-        "20250319113434_000028A",
-        "20250319113934_000029A",
-        "20250319114434_000030A"
+        "20250408135504_000038A",  # 影片名稱(不需要副檔名)
+        "20250408140004_000039A",
     ]  # 影片要照順序
 
 
@@ -101,11 +99,11 @@ if __name__ == '__main__':
     print(df)
     
     
-    # Step3: 使用API上傳GeoVisio
-    id_ = useGeoVisioApi.getApiId(title)
-    if id_:
-        print(f"獲取 ID {id_}")
-        result = uploadImages(SOURCE, id_, df, title, videos)
-        print(result)
-    else:
-        print("獲取 ID 失敗")
+    # # Step3: 使用API上傳GeoVisio
+    # id_ = useGeoVisioApi.getApiId(title)
+    # if id_:
+    #     print(f"獲取 ID {id_}")
+    #     result = uploadImages(SOURCE, id_, df, title, videos)
+    #     print(result)
+    # else:
+    #     print("獲取 ID 失敗")
