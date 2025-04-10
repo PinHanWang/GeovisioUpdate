@@ -3,7 +3,7 @@ from datetime import date
 
 import pandas as pd
 
-import makeExif
+import src.module.utlis.makeExif as makeExif
 import makeScreenshot
 import useGeoVisioApi
 
