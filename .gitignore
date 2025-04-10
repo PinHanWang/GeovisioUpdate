@@ -1,0 +1,12 @@
+*.pyc
+__pycache__/
+.env
+.vscode/
+.idea/
+output/
+logs/
+data/
+logs/
+projects/
+**/*.log
+**/tempCodeRunnerFile.py
