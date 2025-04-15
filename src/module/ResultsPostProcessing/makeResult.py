@@ -2,14 +2,15 @@ from datetime import datetime
 import math
 from pathlib import Path
 import json
-
+import os
+import sys
 import numpy as np
 import pandas as pd
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+from src.module.utlis import makeExif # import同目錄下的exif.py
 
-import src.module.utlis.makeExif as makeExif  # import同目錄下的exif.py
-
-III_SIGN_NAME_JSON_PATH = r"iiiSignName.json"
-CAR_ANGLE_TABLE_CSV_PATH = r"carAngleTable.csv"
+III_SIGN_NAME_JSON_PATH = r"configs\iiiSignName.json"
+CAR_ANGLE_TABLE_CSV_PATH = r"configs\carAngleTable.csv"
 
 def _addCarData(df: pd.DataFrame, frame: int) -> tuple[float]:
     """
@@ -160,10 +161,11 @@ def saveResultCsv(p: Path, df: pd.DataFrame) -> None:
 
 
 if __name__ == '__main__':
-    labelsFolder = Path("workspace")
-    videosFolder = Path(r"E:\DCIM\Movie")
+    labelsFolder = Path(r"D:\MyProject\AIROADUpdate\output\prediction\0408")
+    videosFolder = Path(r"H:\DCIM\Movie")
 
     labelsPath = labelsFolder.glob("2025*A.csv")  # 儲存 labels 的檔案
+    print(f"labelsPath: {labelsPath}")
     for labelPath in labelsPath:
         print(labelPath)
         # get exif imformation
