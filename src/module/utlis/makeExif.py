@@ -22,6 +22,7 @@ from pyproj import Transformer
 #         duration = datetime.strptime(l[2], "%H:%M:%S")
 #         startDate = createDate - timedelta(minutes = duration.minute, seconds = duration.second)
 #     return fps, startDate.strftime("%Y:%m:%d %H:%M:%S")
+
 def _getExifStartTime(p: Path) -> tuple[int, str]:
     """
         取得檔案的EXIF資訊並計算出影像的第一秒GPS時間
@@ -133,10 +134,10 @@ if __name__ == '__main__':
     #     saveExifCsv(df, out)
 
 
-    videoPath = Path(r"H:\DCIM\Movie\Mutes\20250408101610_000008A.MP4")
+    videoPath = Path(r"C:\Users\TMS-24003\Downloads\recovery\20250408100110_000005A.MP4")
     fps, startDate = _getExifStartTime(videoPath)
     print(fps, startDate)
-    exifDf = makeExifDf(videoPath)
-    print(exifDf)
+    # exifDf = makeExifDf(videoPath)
+    # print(exifDf)
     data = _getExifExtractEmbeddedData(videoPath)
     print(data)
