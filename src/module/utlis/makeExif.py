@@ -6,6 +6,22 @@ from pathlib import Path
 import pandas as pd
 from pyproj import Transformer
 
+# def _getExifStartTime(p: Path) -> tuple[int, str]:
+#     """
+#         取得檔案的EXIF資訊並計算出影像的第一秒GPS時間
+#         影像開始時間(startDate) = 檔案創建時間(createDate) - 影像持續時間(duration)
+#         檔案創建時間為整個錄影完成後
+#     """
+#     fps, startDate = -1, ""
+#     cmd = f"exiftool -s {str(p)} -VideoFrameRate -CreateDate -Duration"
+#     with os.popen(cmd) as t:
+#         context = t.read()[:-1]
+#         l = [x.split(": ")[1] for x in context.split("\n")]
+#         fps = float(l[0])
+#         createDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S")
+#         duration = datetime.strptime(l[2], "%H:%M:%S")
+#         startDate = createDate - timedelta(minutes = duration.minute, seconds = duration.second)
+#     return fps, startDate.strftime("%Y:%m:%d %H:%M:%S")
 def _getExifStartTime(p: Path) -> tuple[int, str]:
     """
         取得檔案的EXIF資訊並計算出影像的第一秒GPS時間
@@ -13,15 +29,13 @@ def _getExifStartTime(p: Path) -> tuple[int, str]:
         檔案創建時間為整個錄影完成後
     """
     fps, startDate = -1, ""
-    cmd = f"exiftool -s {str(p)} -VideoFrameRate -CreateDate -Duration"
+    cmd = f"exiftool -s {str(p)} -VideoFrameRate -FileCreateDate"
     with os.popen(cmd) as t:
         context = t.read()[:-1]
         l = [x.split(": ")[1] for x in context.split("\n")]
         fps = float(l[0])
-        createDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S")
-        duration = datetime.strptime(l[2], "%H:%M:%S")
-        startDate = createDate - timedelta(minutes = duration.minute, seconds = duration.second)
-    return fps, startDate.strftime("%Y:%m:%d %H:%M:%S")
+        startDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S%z")
+    return fps, startDate.strftime("%Y:%m:%d %H:%M:%S") 
 
 def _getExifExtractEmbeddedData(p: Path) -> dict:
     """
@@ -106,14 +120,23 @@ def saveExifCsv(df: pd.DataFrame, out: Path) -> None:
 
 
 if __name__ == '__main__':
-    folder = Path(r"E:\DCIM\Movie")
-    name = "20250319092321_000001A.MP4"
-    file = (folder / name)
+    # folder = Path(r"E:\DCIM\Movie")
+    # name = "20250319092321_000001A.MP4"
+    # file = (folder / name)
 
-    print(file)
+    # print(file)
     
-    columns = ["filename", "datetime", "lat", "lon", "speed", "azimuth"]
-    df = makeExifDf(file, columns)
-    if len(df):
-        out = (folder / f"{file.stem}.csv")
-        saveExifCsv(df, out)
+    # columns = ["filename", "datetime", "lat", "lon", "speed", "azimuth"]
+    # df = makeExifDf(file, columns)
+    # if len(df):
+    #     out = (folder / f"{file.stem}.csv")
+    #     saveExifCsv(df, out)
+
+
+    videoPath = Path(r"H:\DCIM\Movie\Mutes\20250408101610_000008A.MP4")
+    fps, startDate = _getExifStartTime(videoPath)
+    print(fps, startDate)
+    exifDf = makeExifDf(videoPath)
+    print(exifDf)
+    data = _getExifExtractEmbeddedData(videoPath)
+    print(data)

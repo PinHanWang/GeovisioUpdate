@@ -162,7 +162,7 @@ def saveResultCsv(p: Path, df: pd.DataFrame) -> None:
 
 if __name__ == '__main__':
     labelsFolder = Path(r"D:\MyProject\AIROADUpdate\output\prediction\0408")
-    videosFolder = Path(r"H:\DCIM\Movie")
+    videosFolder = Path(r"H:\DCIM\Movie\Mutes")
 
     labelsPath = labelsFolder.glob("2025*A.csv")  # 儲存 labels 的檔案
     print(f"labelsPath: {labelsPath}")
