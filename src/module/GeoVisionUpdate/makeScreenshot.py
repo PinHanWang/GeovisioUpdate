@@ -2,7 +2,7 @@ from pathlib import Path
 
 import cv2
 
-import src.module.utlis.makeExif as makeExif  # import同目錄下的exif.py
+import makeExif as makeExif  # import同目錄下的exif.py
 
 def screenshot(videoPath: Path, imagesPath: Path, frames: list[int] = []) -> None:
     """
@@ -27,7 +27,7 @@ def screenshot(videoPath: Path, imagesPath: Path, frames: list[int] = []) -> Non
         ret, frame = cap.read()
         if not ret:
             break
-        imagePath = (imagesPath / f"{videoPath.stem}_{sep}.png")
+        imagePath = (imagesPath / f"{videoPath.stem}_{sep}.jpg")
         cv2.imwrite(str(imagePath), frame)
         print(f"\rsave image to {imagePath}", end="")
 

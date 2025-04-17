@@ -33,12 +33,16 @@ def uploadPicture(id_: str, imagePath: Path, seq: int, formatTime: str, lat: flo
         "position": seq,
         "isBlurred": "true",
         "override_capture_time": formatTime,
-        "override_latitude": lat,
-        "override_longitude": lon
+        "override_latitude": float(lat),
+        "override_longitude": float(lon)
     }
-    files_ = {"picture": (imagePath.name, open(str(imagePath), "rb"), "image/jpeg")}
+    files_ = {"picture": (imagePath.name, open(str(imagePath), "rb"), "image/jpg")}
+    print(data)
+    print(files_)
     try:
         response = requests.post(url, data = data, files = files_)
+        # print(response.status_code)
+        # print(response.text)
         return response.status_code  # 202
     except:
         return response.status_code
@@ -51,10 +55,13 @@ def uploadRoute(folder: Path, id_: str, df: pd.DataFrame) -> int:
         i = 0
         while i < len(indexList):
             filename, datetime, lat, lon, _speed, _sec, frame = df.loc[indexList[i]]
-            imagePath = (folder / f"{filename}_{frame}.png")
+            imagePath = (folder /filename / f"{filename}_{frame}.jpg")
+            print(imagePath)
+            # imagePath = (folder / f"{filename}_{frame}.png") # Check image folder path
             seq = i + 1
             formatTime = timeParser(datetime)
             status_code = uploadPicture(id_, imagePath, seq, formatTime, lat, lon)
+            print(status_code)
             if status_code == 202:
                 print(f"\r圖片 {imagePath.name} 上傳成功", end="")
                 sleep(1)
