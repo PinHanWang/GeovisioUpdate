@@ -6,23 +6,6 @@ from pathlib import Path
 import pandas as pd
 from pyproj import Transformer
 
-# def _getExifStartTime(p: Path) -> tuple[int, str]:
-#     """
-#         取得檔案的EXIF資訊並計算出影像的第一秒GPS時間
-#         影像開始時間(startDate) = 檔案創建時間(createDate) - 影像持續時間(duration)
-#         檔案創建時間為整個錄影完成後
-#     """
-#     fps, startDate = -1, ""
-#     cmd = f"exiftool -s {str(p)} -VideoFrameRate -CreateDate -Duration"
-#     with os.popen(cmd) as t:
-#         context = t.read()[:-1]
-#         l = [x.split(": ")[1] for x in context.split("\n")]
-#         fps = float(l[0])
-#         createDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S")
-#         duration = datetime.strptime(l[2], "%H:%M:%S")
-#         startDate = createDate - timedelta(minutes = duration.minute, seconds = duration.second)
-#     return fps, startDate.strftime("%Y:%m:%d %H:%M:%S")
-
 def _getExifStartTime(p: Path) -> tuple[int, str]:
     """
         取得檔案的EXIF資訊並計算出影像的第一秒GPS時間
@@ -30,13 +13,30 @@ def _getExifStartTime(p: Path) -> tuple[int, str]:
         檔案創建時間為整個錄影完成後
     """
     fps, startDate = -1, ""
-    cmd = f"exiftool -s {str(p)} -VideoFrameRate -FileCreateDate"
+    cmd = f"exiftool -s {str(p)} -VideoFrameRate -CreateDate -Duration"
     with os.popen(cmd) as t:
         context = t.read()[:-1]
-        l = [x.split(": ")[1] for x in context.split("\n")]
+        l = [x.split(": ")[1] for x in context.split("\n") if ": " in x]
         fps = float(l[0])
-        startDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S%z")
-    return fps, startDate.strftime("%Y:%m:%d %H:%M:%S") 
+        createDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S")
+        duration = datetime.strptime(l[2], "%H:%M:%S")
+        startDate = createDate - timedelta(minutes = duration.minute, seconds = duration.second)
+    return fps, startDate.strftime("%Y:%m:%d %H:%M:%S")
+
+# def _getExifStartTime(p: Path) -> tuple[int, str]:
+#     """
+#         取得檔案的EXIF資訊並計算出影像的第一秒GPS時間
+#         影像開始時間(startDate) = 檔案創建時間(createDate) - 影像持續時間(duration)
+#         檔案創建時間為整個錄影完成後
+#     """
+#     fps, startDate = -1, ""
+#     cmd = f"exiftool -s {str(p)} -VideoFrameRate -FileCreateDate"
+#     with os.popen(cmd) as t:
+#         context = t.read()[:-1]
+#         l = [x.split(": ")[1] for x in context.split("\n")]
+#         fps = float(l[0])
+#         startDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S%z")
+#     return fps, startDate.strftime("%Y:%m:%d %H:%M:%S") 
 
 def _getExifExtractEmbeddedData(p: Path) -> dict:
     """
