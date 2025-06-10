@@ -6,8 +6,9 @@ import pandas as pd
 import io
 from pathlib import Path
 import aiohttp
+from aiohttp import ClientTimeout
 import asyncio
-from failures import upload_failures
+from failures import upload_failures, collection_failures
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type, RetryError
 import logging.config
 from logger import LOGGING_CONFIG
@@ -21,10 +22,17 @@ print(f"TMS_GEOVISIO_URL: {TMS_GEOVISIO_URL}")
 
 
 def log_retry_error(retry_state):
+    collection_id = retry_state.args[1]
     keyname = retry_state.args[2]
-    logger.error(f"Upload permanently failed after retries: {keyname}")
+    logger.error(f"Upload permanently failed after retries: {keyname} in collection {collection_id}")
 
-    upload_failures.append(keyname)
+
+    upload_failures.append({
+        'KeyName': keyname,
+        'CollectionID': collection_id,
+        "Error": str(retry_state.outcome.exception()) if retry_state.outcome else "Unknown"
+    })
+    collection_failures.add(collection_id)
 @retry(
     stop=stop_after_attempt(5),
     wait=wait_fixed(5),
@@ -143,11 +151,11 @@ async def create_collection(title, description, keywords, bbox=None, start_time=
             async with session.post(url, json=payload) as response:
                 if response.status in [200, 201]:
                     data = await response.json()
-                    print("Collection created:", data["id"])
+                    logger.info(f"Collection created: {data['id']}")
                     return data["id"]
                 else:
-                    print(f"Failed to create collection: {response.status}")
-                    print(await response.text())
+                    logger.error(f"Failed to create collection {response.status}")
+                    logger.error(await response.text())
         except Exception as e:
             print("Error:", e)
     return None
@@ -167,8 +175,14 @@ async def create_collection(title, description, keywords, bbox=None, start_time=
 #         # Call the function to upload each image
 #         upload_image_to_collection(collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
 
+semaphore = asyncio.Semaphore(5)
+async def safe_upload_image(session, semaphore, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
+    async with semaphore:
+        await upload_image_to_collection(session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
+
 
 async def upload_images_to_geovisio(df, collection_id):
+    semaphore = asyncio.Semaphore(5)
     async with aiohttp.ClientSession() as session:
         tasks = []
         index = 0
@@ -181,8 +195,7 @@ async def upload_images_to_geovisio(df, collection_id):
             img_url = row['url']
             seq = index + 1
 
-            task = upload_image_to_collection(
-                session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
+            task = safe_upload_image(session, semaphore, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
             tasks.append(task)
             index += 1
 
@@ -228,7 +241,7 @@ async def upload_images_to_geovisio(df, collection_id):
 #     except Exception as e:
 #         print(f"Error uploading item {keyname}: {e}")
 
-
+timeout = ClientTimeout(total=60) 
 async def upload_image_to_collection(session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
     url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}/items"
 
@@ -241,9 +254,9 @@ async def upload_image_to_collection(session, collection_id, keyname, gps_time, 
     }
 
     try:
-        logging.info(f"Starting upload of {keyname} (seq {seq}) to collection {collection_id}")
+        logger.info(f"Starting upload of {keyname} (seq {seq}) to collection {collection_id}")
 
-        async with session.get(img_url) as img_response:
+        async with session.get(img_url, timeout=timeout) as img_response:
             if img_response.status == 200:
                 img_bytes = await img_response.read()
                 image_data = io.BytesIO(img_bytes)
@@ -260,19 +273,23 @@ async def upload_image_to_collection(session, collection_id, keyname, gps_time, 
 
                 async with session.post(url, data=form_data) as post_response:
                     if post_response.status in [200, 201, 202]:
-                        logging.info(f"Successfully uploaded item: {keyname}")
+                        logger.info(f"Successfully uploaded item: {keyname}")
                     else:
                         msg = await post_response.text()
-                        logging.warning(f"Failed to upload item {keyname}: {post_response.status} - {msg}")
+                        logger.warning(f"Failed to upload item {keyname}: {post_response.status} - {msg}")
                         raise Exception(f"Upload failed with status {post_response.status}")
 
             else:
-                logging.warning(f"Failed to fetch image from {img_url}. Status code: {img_response.status}")
+                logger.warning(f"Failed to fetch image from {img_url}. Status code: {img_response.status}")
                 raise Exception(f"Image fetch failed with status {img_response.status}")
 
+    except (asyncio.TimeoutError, asyncio.CancelledError) as e:
+        logger.error(f"Timeout when fetching image from {img_url}: {e}")
+        raise e 
+
     except Exception as e:
-        logging.error(f"Exception uploading item {keyname}: {e}")
-        raise e  # raise 讓 tenacity retry
+        logger.error(f"Exception uploading item {keyname}: {e}")
+        raise e 
 
 if __name__ == "__main__":
     # title = "Test Collection"

@@ -10,7 +10,7 @@ from pathlib import Path
 from tqdm import tqdm
 from time import sleep
 import time
-from failures import upload_failures
+from failures import upload_failures, collection_failures
 import asyncio
 import logging.config
 from logger import LOGGING_CONFIG
@@ -36,15 +36,18 @@ async def main():
 
     prcocessed_data = data_preprocessing(csv_path)
     grouped_data = group_by_date(prcocessed_data)
-
+    num_dates = len(grouped_data)
+    logger.info(f"Total number of unique dates in the dataset: {num_dates}")
     for date, group in grouped_data: # for date, group in grouped_data:
         logger.info(f"Processing data for date: {date}")
-        if date.strftime('%Y-%m-%d') == "2025-05-22" or date.strftime('%Y-%m-%d') == "2025-05-23" or date.strftime('%Y-%m-%d') == "2025-05-27":
-            logger.info(f"Skipping processing for {date}...")
-            continue  # Skip processing for this date
+        # if date.strftime('%Y-%m-%d') == "2025-05-22" or date.strftime('%Y-%m-%d') == "2025-05-23" or date.strftime('%Y-%m-%d') == "2025-05-27":
+        #     logger.info(f"Skipping processing for {date}...")
+        #     continue  # Skip processing for this date
         seq_data = group.groupby('group_id')
-
+        logger.info(f"Number of sequences for {date}: {len(seq_data)}")
+        count = 0
         for seq_id, seq in seq_data:
+            logger.info(f"{count+1}/{len(seq_data)} Processing sequence ID: {seq_id} for date: {date}")
             seq = seq.sort_values(by='GPSTime')
 
             collection_id = await create_collection(
@@ -57,8 +60,9 @@ async def main():
 
             await upload_images_to_geovisio(seq, collection_id)
             
-            await asyncio.sleep(10)
-        await asyncio.sleep(10)
+            await asyncio.sleep(60)
+            count += 1
+        await asyncio.sleep(60)
         
 
     if upload_failures:
@@ -69,6 +73,16 @@ async def main():
         failure_df = pd.DataFrame(upload_failures)
         failure_csv_path = f"logs/{time.strftime('%Y-%m-%d_%H-%M-%S')}_failures.csv"
         failure_df.to_csv(failure_csv_path, index=False)
+
+    if collection_failures:
+        logger.error(f"Failures occurred in {len(collection_failures)} collections.")
+        for collection_id in collection_failures:
+            logger.error(f"Collection with failures: {collection_id}")
+
+        collections_df = pd.DataFrame({"collection_id": list(collection_failures)})
+        collections_csv_path = f"logs/{time.strftime('%Y-%m-%d_%H-%M-%S')}_failed_collections.csv"
+        collections_df.to_csv(collections_csv_path, index=False)
+        logger.error(f"Failed collections saved to {collections_csv_path}")
 
     else:
         logger.info("All images uploaded successfully.")
