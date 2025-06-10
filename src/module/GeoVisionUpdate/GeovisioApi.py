@@ -5,13 +5,37 @@ from dotenv import load_dotenv
 import pandas as pd
 import io
 from pathlib import Path
+import aiohttp
+import asyncio
+from failures import upload_failures
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type, RetryError
+import logging.config
+from logger import LOGGING_CONFIG
+logging.config.dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
 print(f"TMS_GEOVISIO_URL: {TMS_GEOVISIO_URL}")
+
+
+
+def log_retry_error(retry_state):
+    keyname = retry_state.args[2]
+    logger.error(f"Upload permanently failed after retries: {keyname}")
+
+    upload_failures.append(keyname)
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_fixed(5),
+    retry=retry_if_exception_type(Exception),
+    retry_error_callback=log_retry_error
+)
+
 def get_all_collections():
     url = f"{TMS_GEOVISIO_URL}/api/collections"
     try:
+        logger.info(f"Fetching all collections.")
         response = requests.get(url)
 
         if response.status_code == 200:
@@ -25,18 +49,19 @@ def get_all_collections():
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
 
-            print(f"All collections saved to {output_file}")
+            logger.info(f"All collections saved to {output_file}")
         else:
-            print(f"Failed to fetch collections. Status code: {response.status_code}")
-            print(f"Response: {response.text}")
+            logger.error(
+                f"Failed to fetch collections. Status code: {response.status_code}")
+            logger.error(f"Response: {response.text}")
     except Exception as e:
-        print(f"An error occurred while fetching collections: {e}")
-
+        logger.error(f"An error occurred while fetching collections: {e}")
 
 
 def get_collection_by_items_id(collection_id):
     url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}"
     try:
+        logger.info(f"Fetching collection with ID: {collection_id}")
         response = requests.get(url)
 
         if response.status_code == 200:
@@ -45,20 +70,56 @@ def get_collection_by_items_id(collection_id):
             output_dir = r'output\geovisio'
             os.makedirs(output_dir, exist_ok=True)
 
-            output_file = os.path.join(output_dir, f'collection_{collection_id}.json')
+            output_file = os.path.join(
+                output_dir, f'collection_{collection_id}.json')
 
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
 
-            print(f"Collection {collection_id} saved to {output_file}")
+            logger.info(f"Collection {collection_id} saved to {output_file}")
         else:
-            print(f"Failed to fetch collection {collection_id}. Status code: {response.status_code}")
-            print(f"Response: {response.text}")
+            logger.error(
+                f"Failed to fetch collection {collection_id}. Status code: {response.status_code}")
+            logger.error(f"Response: {response.text}")
     except Exception as e:
-        print(f"An error occurred while fetching collection {collection_id}: {e}")
+        logger.error(
+            f"An error occurred while fetching collection {collection_id}: {e}")
 
 
-def create_collection(title, description, bbox=None, start_time=None):
+# def create_collection(title, description, bbox=None, start_time=None):
+#     url = f"{TMS_GEOVISIO_URL}/api/collections"
+
+#     extent = {}
+#     if bbox:
+#         extent["spatial"] = {"bbox": [bbox]}
+#     if start_time is not None:
+#         extent["temporal"] = {"interval": [[start_time, None]]}
+#     else:
+#         extent["temporal"] = {"interval": [[None, None]]}
+
+#     payload = {
+#         "title": title,
+#         "description": description,
+#         "license": "proprietary",
+#         "keywords": ["test", "upload"],
+#         "extent": extent
+#     }
+
+#     try:
+#         response = requests.post(url, json=payload)
+#         if response.status_code in [200, 201]:
+#             data = response.json()
+#             print("Collection created:", data["id"])
+#             return data["id"]
+#         else:
+#             print(f"Failed to create collection: {response.status_code}")
+#             print(response.text)
+#     except Exception as e:
+#         print("Error:", e)
+#     return None
+
+
+async def create_collection(title, description, keywords, bbox=None, start_time=None):
     url = f"{TMS_GEOVISIO_URL}/api/collections"
 
     extent = {}
@@ -67,84 +128,151 @@ def create_collection(title, description, bbox=None, start_time=None):
     if start_time is not None:
         extent["temporal"] = {"interval": [[start_time, None]]}
     else:
-        extent["temporal"] = {"interval": [[None, None]]} 
+        extent["temporal"] = {"interval": [[None, None]]}
 
     payload = {
         "title": title,
         "description": description,
         "license": "proprietary",
-        "keywords": ["test", "upload"],
+        "keywords": keywords,
         "extent": extent
     }
 
-    try:
-        response = requests.post(url, json=payload)
-        if response.status_code in [200, 201]:
-            data = response.json()
-            print("Collection created:", data["id"])
-            return data["id"]
-        else:
-            print(f"Failed to create collection: {response.status_code}")
-            print(response.text)
-    except Exception as e:
-        print("Error:", e)
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(url, json=payload) as response:
+                if response.status in [200, 201]:
+                    data = await response.json()
+                    print("Collection created:", data["id"])
+                    return data["id"]
+                else:
+                    print(f"Failed to create collection: {response.status}")
+                    print(await response.text())
+        except Exception as e:
+            print("Error:", e)
     return None
 
-def upload_images_to_geovisio(df, collection_id):
+# def upload_images_to_geovisio(df, collection_id):
 
-    # parse the DataFrame to extract necessary columns
-    for index, row in df.iterrows():
-        keyname = row['KeyName']
-        gps_time = row['GPSTime']
-        gps_x = row['GPS_X']
-        gps_y = row['GPS_Y']
-        speed = row['speed']
-        img_url = row['url']
-        seq = index + 1  # Assuming seq is just the index + 1 for ordering
+#     # parse the DataFrame to extract necessary columns
+#     for index, row in df.iterrows():
+#         keyname = row['KeyName']
+#         gps_time = row['GPSTime']
+#         gps_x = row['GPS_X']
+#         gps_y = row['GPS_Y']
+#         speed = row['speed']
+#         img_url = row['url']
+#         seq = index + 1  # Assuming seq is just the index + 1 for ordering
 
-        # Call the function to upload each image
-        upload_image_to_collection(collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
+#         # Call the function to upload each image
+#         upload_image_to_collection(collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
 
-# Upload an image to a specific collection in GeoVisio
-def upload_image_to_collection(collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
-    
+
+async def upload_images_to_geovisio(df, collection_id):
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        index = 0
+        for _, row in df.iterrows():
+            keyname = row['KeyName']
+            gps_time = row['GPSTime']
+            gps_x = row['GPS_X']
+            gps_y = row['GPS_Y']
+            speed = row['speed']
+            img_url = row['url']
+            seq = index + 1
+
+            task = upload_image_to_collection(
+                session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
+            tasks.append(task)
+            index += 1
+
+        await asyncio.gather(*tasks)
+
+
+# # Upload an image to a specific collection in GeoVisio
+# def upload_image_to_collection(collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
+
+#     url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}/items"
+
+#     # Prepare the data to be sent in the request
+#     data = {
+#         "position": seq,
+#         "isBlurred": "false",  # whether the image is blurred or not
+#         "override_capture_time": gps_time,  # override the capture time
+#         "override_latitude": float(gps_y),
+#         "override_longitude": float(gps_x)
+#     }
+
+#     try:
+#         # Fetch the image from the URL
+#         response = requests.get(img_url)
+#         if response.status_code == 200:
+#             # Prepare the image file for upload
+#             image_data = io.BytesIO(response.content)
+#             files_ = {"picture": (Path(img_url).name, image_data, "image/jpeg")}
+#         else:
+#             print(f"Failed to fetch image from {img_url}. Status code: {response.status_code}")
+#             return 404
+#     except Exception as e:
+#         print(f"Error fetching image from {img_url}: {e}")
+#         return 404
+
+#     # Send the POST request to upload the image
+#     try:
+#         response = requests.post(url, data=data, files=files_)
+#         if response.status_code in [200, 201, 202]:
+#             print(f"Uploaded item: {keyname}")
+#         else:
+#             print(f"Failed to upload item {keyname}: {response.status_code}")
+#             print(response.text)
+#     except Exception as e:
+#         print(f"Error uploading item {keyname}: {e}")
+
+
+async def upload_image_to_collection(session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
     url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}/items"
 
-    # Prepare the data to be sent in the request
     data = {
         "position": seq,
-        "isBlurred": "false",  # whether the image is blurred or not
-        "override_capture_time": gps_time,  # override the capture time
+        "isBlurred": "true",
+        "override_capture_time": gps_time,
         "override_latitude": float(gps_y),
         "override_longitude": float(gps_x)
     }
 
     try:
-        # Fetch the image from the URL
-        response = requests.get(img_url)
-        if response.status_code == 200:
-            # Prepare the image file for upload
-            image_data = io.BytesIO(response.content)
-            files_ = {"picture": (Path(img_url).name, image_data, "image/jpeg")}
-        else:
-            print(f"Failed to fetch image from {img_url}. Status code: {response.status_code}")
-            return 404
+        logging.info(f"Starting upload of {keyname} (seq {seq}) to collection {collection_id}")
+
+        async with session.get(img_url) as img_response:
+            if img_response.status == 200:
+                img_bytes = await img_response.read()
+                image_data = io.BytesIO(img_bytes)
+
+                form_data = aiohttp.FormData()
+                for k, v in data.items():
+                    form_data.add_field(k, str(v))
+                form_data.add_field(
+                    'picture',
+                    image_data,
+                    filename=Path(img_url).name,
+                    content_type='image/jpeg'
+                )
+
+                async with session.post(url, data=form_data) as post_response:
+                    if post_response.status in [200, 201, 202]:
+                        logging.info(f"Successfully uploaded item: {keyname}")
+                    else:
+                        msg = await post_response.text()
+                        logging.warning(f"Failed to upload item {keyname}: {post_response.status} - {msg}")
+                        raise Exception(f"Upload failed with status {post_response.status}")
+
+            else:
+                logging.warning(f"Failed to fetch image from {img_url}. Status code: {img_response.status}")
+                raise Exception(f"Image fetch failed with status {img_response.status}")
+
     except Exception as e:
-        print(f"Error fetching image from {img_url}: {e}")
-        return 404
-
-    # Send the POST request to upload the image
-    try:
-        response = requests.post(url, data=data, files=files_)
-        if response.status_code in [200, 201, 202]:
-            print(f"Uploaded item: {keyname}")
-        else:
-            print(f"Failed to upload item {keyname}: {response.status_code}")
-            print(response.text)
-    except Exception as e:
-        print(f"Error uploading item {keyname}: {e}")
-
-
+        logging.error(f"Exception uploading item {keyname}: {e}")
+        raise e  # raise 讓 tenacity retry
 
 if __name__ == "__main__":
     # title = "Test Collection"
@@ -175,4 +303,3 @@ if __name__ == "__main__":
     #     print("Image downloaded successfully.")
     # else:
     #     print("Failed to download image.")
-

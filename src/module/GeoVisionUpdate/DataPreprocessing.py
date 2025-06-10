@@ -5,6 +5,10 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import pytz
 from pyproj import Transformer
+import logging.config
+from logger import LOGGING_CONFIG
+logging.config.dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
 
 
 def parse_keyname_to_gpstime(keyname: str) -> datetime:
@@ -22,7 +26,7 @@ def parse_keyname_to_gpstime(keyname: str) -> datetime:
 
         return gps_time
     except Exception as e:
-        print(f"Error parsing KeyName '{keyname}': {e}")
+        logger.error(f"Error parsing KeyName '{keyname}': {e}")
         return None
 
 
@@ -52,7 +56,8 @@ def get_distance_difference(df: pd.DataFrame) -> pd.DataFrame:
             x, y = transformer.transform(lon, lat)
             return x, y
         except Exception as e:
-            print(f"Error converting coordinates ({lon}, {lat}): {e}")
+            logger.error(f"Error converting coordinates ({lon}, {lat}): {e}")
+            # print(f"Error converting coordinates ({lon}, {lat}): {e}")
             return None, None
 
     df = df.sort_values(by='GPSTime')
@@ -70,30 +75,9 @@ def get_distance_difference(df: pd.DataFrame) -> pd.DataFrame:
         if pd.notnull(row['X_prev']) else 0.0,
         axis=1
     )
-
-    # 不需要 X_prev / Y_prev 可刪掉
     df = df.drop(columns=['X_prev', 'Y_prev'])
 
     return df
-
-
-def group_by_date(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Group the data by the date portion of the GPSTime.
-    """
-    df['Date'] = df['GPSTime'].dt.date  # Extract the date part from GPSTime
-    grouped = df.groupby('Date')
-
-    # Create a list to store each group
-    grouped_data = {}
-    for date, group in grouped:
-        grouped_data[date] = group
-        print(f"Data for {date}:")
-        print(group)
-        print()
-
-    return grouped_data
-
 
 
 def split_groups_by_time_and_distance(df: pd.DataFrame, time_threshold: int = 300, distance_threshold: float = 20.0) -> pd.DataFrame:
@@ -120,31 +104,34 @@ def data_preprocessing(csv_path: Path) -> pd.DataFrame:
     """
     # Read the CSV file
     if not csv_path.exists():
+        logger.error(f"The file {csv_path} does not exist.")
         raise FileNotFoundError(f"The file {csv_path} does not exist.")
     df = pd.read_csv(csv_path)
 
     # Drop duplicate rows based on 'KeyName'
     df_unique = df.drop_duplicates(subset=['KeyName'], keep='first')
-    print(f"Number of unique rows based on 'KeyName': {len(df_unique)}")
+    logger.info(f"Number of unique rows based on 'KeyName': {len(df_unique)}")
 
     # Convert 'KeyName' to string type and calculate GPS time difference
     df_unique['GPSTime'] = df_unique['KeyName'].apply(parse_keyname_to_gpstime)
     if df_unique['GPSTime'].isnull().any():
-        print("Warning: Some GPSTime values could not be parsed.")
+        logger.warning("Warning: Some GPSTime values could not be parsed.")
     # df_unique.to_csv(csv_path.parent / "parsed_data.csv", index=False)
     df_unique = get_time_difference(df_unique)
+    logger.info("Calculated GPSTime_diff for each row.")
     # Calculate distance differences
     df_unique = get_distance_difference(df_unique)
-    
+    logger.info("Calculated distance_to_prev for each row.")   
     df_unique = split_groups_by_time_and_distance(df_unique)
+    logger.info("Split data into groups based on time and distance thresholds.")
 
     subset_cols = ['KeyName', 'GPSTime', 'GPSTime_diff',
                    'GPS_X', 'GPS_Y', 'distance_to_prev','group_id','speed', 'url']
     
     if (df_unique['GPSTime_diff'] > 60.0).any():
-        print("Warning: Some GPSTime_diff values are greater than 60 seconds.")
+        logger.warning("Warning: Some GPSTime_diff values are greater than 60 seconds.")
         warning_df = df_unique[df_unique['GPSTime_diff'] > 60.0]
-        warning_df.to_csv(csv_path.parent / "warning_data.csv", index=False)
+        # warning_df.to_csv(csv_path.parent / "warning_data.csv", index=False)
 
     return df_unique[subset_cols]
 
