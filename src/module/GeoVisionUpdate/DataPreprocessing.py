@@ -98,7 +98,7 @@ def split_groups_by_time_and_distance(df: pd.DataFrame, time_threshold: int = 30
     
     df['group_id'] = group_ids
     return df
-def data_preprocessing(csv_path: Path) -> pd.DataFrame:
+def data_preprocessing(csv_path: Path, time_threshold: int = 300, distance_threshold: float = 20.0) -> pd.DataFrame:
     """
     Data preprocessing for GeoVision data.
     """
@@ -122,7 +122,7 @@ def data_preprocessing(csv_path: Path) -> pd.DataFrame:
     # Calculate distance differences
     df_unique = get_distance_difference(df_unique)
     logger.info("Calculated distance_to_prev for each row.")   
-    df_unique = split_groups_by_time_and_distance(df_unique)
+    df_unique = split_groups_by_time_and_distance(df_unique, time_threshold=300, distance_threshold=20.0)
     logger.info("Split data into groups based on time and distance thresholds.")
 
     subset_cols = ['KeyName', 'GPSTime', 'GPSTime_diff',
