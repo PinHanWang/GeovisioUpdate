@@ -16,8 +16,8 @@ logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
-print(f"TMS_GEOVISIO_URL: {TMS_GEOVISIO_URL}")
+TWCC_GEOVISIO_URL = os.getenv("TWCC_GEOVISIO_URL")
+print(f"TWCC_GEOVISIO_URL: {TWCC_GEOVISIO_URL}")
 
 
 
@@ -41,7 +41,7 @@ def log_retry_error(retry_state):
 )
 
 def get_all_collections():
-    url = f"{TMS_GEOVISIO_URL}/api/collections"
+    url = f"{TWCC_GEOVISIO_URL}/api/collections"
     try:
         logger.info(f"Fetching all collections.")
         response = requests.get(url)
@@ -67,7 +67,7 @@ def get_all_collections():
 
 
 def get_collection_by_items_id(collection_id):
-    url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}"
+    url = f"{TWCC_GEOVISIO_URL}/api/collections/{collection_id}"
     try:
         logger.info(f"Fetching collection with ID: {collection_id}")
         response = requests.get(url)
@@ -94,41 +94,9 @@ def get_collection_by_items_id(collection_id):
             f"An error occurred while fetching collection {collection_id}: {e}")
 
 
-# def create_collection(title, description, bbox=None, start_time=None):
-#     url = f"{TMS_GEOVISIO_URL}/api/collections"
-
-#     extent = {}
-#     if bbox:
-#         extent["spatial"] = {"bbox": [bbox]}
-#     if start_time is not None:
-#         extent["temporal"] = {"interval": [[start_time, None]]}
-#     else:
-#         extent["temporal"] = {"interval": [[None, None]]}
-
-#     payload = {
-#         "title": title,
-#         "description": description,
-#         "license": "proprietary",
-#         "keywords": ["test", "upload"],
-#         "extent": extent
-#     }
-
-#     try:
-#         response = requests.post(url, json=payload)
-#         if response.status_code in [200, 201]:
-#             data = response.json()
-#             print("Collection created:", data["id"])
-#             return data["id"]
-#         else:
-#             print(f"Failed to create collection: {response.status_code}")
-#             print(response.text)
-#     except Exception as e:
-#         print("Error:", e)
-#     return None
-
 
 async def create_collection(title, description, keywords, bbox=None, start_time=None):
-    url = f"{TMS_GEOVISIO_URL}/api/collections"
+    url = f"{TWCC_GEOVISIO_URL}/api/collections"
 
     extent = {}
     if bbox:
@@ -160,28 +128,14 @@ async def create_collection(title, description, keywords, bbox=None, start_time=
             print("Error:", e)
     return None
 
-# def upload_images_to_geovisio(df, collection_id):
 
-#     # parse the DataFrame to extract necessary columns
-#     for index, row in df.iterrows():
-#         keyname = row['KeyName']
-#         gps_time = row['GPSTime']
-#         gps_x = row['GPS_X']
-#         gps_y = row['GPS_Y']
-#         speed = row['speed']
-#         img_url = row['url']
-#         seq = index + 1  # Assuming seq is just the index + 1 for ordering
-
-#         # Call the function to upload each image
-#         upload_image_to_collection(collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
-
-semaphore = asyncio.Semaphore(5)
+semaphore = asyncio.Semaphore(3)
 async def safe_upload_image(session, semaphore, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
     async with semaphore:
         await upload_image_to_collection(session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
 
 async def upload_images_to_geovisio(df, collection_id):
-    semaphore = asyncio.Semaphore(5)
+    semaphore = asyncio.Semaphore(3)
     async with aiohttp.ClientSession() as session:
         tasks = []
         index = 0
@@ -201,49 +155,20 @@ async def upload_images_to_geovisio(df, collection_id):
         await asyncio.gather(*tasks)
         
 
+async def fetch_image(session, img_url, timeout):
+    async with session.get(img_url, timeout=timeout) as img_response:
+        if img_response.status == 200:
+            img_bytes = await img_response.read()
+            return io.BytesIO(img_bytes)
+        else:
+            logger.warning(f"Failed to fetch image from {img_url}. Status code: {img_response.status}")
+            raise Exception(f"Image fetch failed with status {img_response.status}")
 
-# # Upload an image to a specific collection in GeoVisio
-# def upload_image_to_collection(collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
 
-#     url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}/items"
 
-#     # Prepare the data to be sent in the request
-#     data = {
-#         "position": seq,
-#         "isBlurred": "false",  # whether the image is blurred or not
-#         "override_capture_time": gps_time,  # override the capture time
-#         "override_latitude": float(gps_y),
-#         "override_longitude": float(gps_x)
-#     }
-
-#     try:
-#         # Fetch the image from the URL
-#         response = requests.get(img_url)
-#         if response.status_code == 200:
-#             # Prepare the image file for upload
-#             image_data = io.BytesIO(response.content)
-#             files_ = {"picture": (Path(img_url).name, image_data, "image/jpeg")}
-#         else:
-#             print(f"Failed to fetch image from {img_url}. Status code: {response.status_code}")
-#             return 404
-#     except Exception as e:
-#         print(f"Error fetching image from {img_url}: {e}")
-#         return 404
-
-#     # Send the POST request to upload the image
-#     try:
-#         response = requests.post(url, data=data, files=files_)
-#         if response.status_code in [200, 201, 202]:
-#             print(f"Uploaded item: {keyname}")
-#         else:
-#             print(f"Failed to upload item {keyname}: {response.status_code}")
-#             print(response.text)
-#     except Exception as e:
-#         print(f"Error uploading item {keyname}: {e}")
-
-timeout = ClientTimeout(total=60) 
+timeout = ClientTimeout(total=180) 
 async def upload_image_to_collection(session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
-    url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}/items"
+    url = f"{TWCC_GEOVISIO_URL}/api/collections/{collection_id}/items"
 
     data = {
         "position": seq,
@@ -256,32 +181,25 @@ async def upload_image_to_collection(session, collection_id, keyname, gps_time, 
     try:
         logger.info(f"Starting upload of {keyname} (seq {seq}) to collection {collection_id}")
 
-        async with session.get(img_url, timeout=timeout) as img_response:
-            if img_response.status == 200:
-                img_bytes = await img_response.read()
-                image_data = io.BytesIO(img_bytes)
+        image_data = await fetch_image(session, img_url, timeout)
+        
+        form_data = aiohttp.FormData()
+        for k, v in data.items():
+            form_data.add_field(k, str(v))
+        form_data.add_field(
+            'picture',
+            image_data,
+            filename=Path(img_url).name,
+            content_type='image/jpeg'
+        )
 
-                form_data = aiohttp.FormData()
-                for k, v in data.items():
-                    form_data.add_field(k, str(v))
-                form_data.add_field(
-                    'picture',
-                    image_data,
-                    filename=Path(img_url).name,
-                    content_type='image/jpeg'
-                )
-
-                async with session.post(url, data=form_data, timeout=timeout) as post_response:
-                    if post_response.status in [200, 201, 202]:
-                        logger.info(f"Successfully uploaded item: {keyname}")
-                    else:
-                        text = await post_response.text()
-                        logger.warning(f"Failed to upload item {keyname}: {post_response.status} - {text}")
-                        raise Exception(f"Upload failed with status {post_response.status}")
-
+        async with session.post(url, data=form_data, timeout=timeout) as post_response:
+            if post_response.status in [200, 201, 202]:
+                logger.info(f"Successfully uploaded item: {keyname}")
             else:
-                logger.warning(f"Failed to fetch image from {img_url}. Status code: {img_response.status}")
-                raise Exception(f"Image fetch failed with status {img_response.status}")
+                text = await post_response.text()
+                logger.warning(f"Failed to upload item {keyname}: {post_response.status} - {text}")
+                raise Exception(f"Upload failed with status {post_response.status}")
 
     except (asyncio.TimeoutError, asyncio.CancelledError) as e:
         logger.error(f"Timeout when fetching image from {img_url}: {e}")
@@ -291,7 +209,7 @@ async def upload_image_to_collection(session, collection_id, keyname, gps_time, 
         logger.error(f"Exception uploading item {keyname}: {e}")
         raise e 
     
-    await asyncio.sleep(1)
+    await asyncio.sleep(3)
 
 
 if __name__ == "__main__":

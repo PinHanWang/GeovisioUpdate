@@ -1,5 +1,5 @@
 from DataPreprocessing import data_preprocessing
-from GeovisioApi import create_collection, upload_images_to_geovisio, get_all_collections
+from GeovisioApi_TWCC import create_collection, upload_images_to_geovisio, get_all_collections
 import os
 from pathlib import Path
 import pandas as pd
@@ -18,8 +18,8 @@ from logger import LOGGING_CONFIG
 logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 load_dotenv()
-TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
-print(f"TMS_GEOVISIO_URL: {TMS_GEOVISIO_URL}")
+TWCC_GEOVISIO_URL = os.getenv("TWCC_GEOVISIO_URL")
+print(f"TWCC_GEOVISIO_URL: {TWCC_GEOVISIO_URL}")
 
 
 def group_by_date(df: pd.DataFrame) -> pd.DataFrame:
@@ -52,9 +52,9 @@ async def main():
         count = 0
         for seq_id, seq in seq_data:
             logger.info(f"{count+1}/{len(seq_data)} Processing sequence ID: {seq_id} for date: {date}")
-            if date.strftime('%Y-%m-%d') == "2025-05-08" and seq_id == 0:
-                logger.info(f"Skipping processing for {date} and sequence ID: {seq_id}...")
-                continue
+            # if date.strftime('%Y-%m-%d') == "2025-05-08" and seq_id == 0:
+            #     logger.info(f"Skipping processing for {date} and sequence ID: {seq_id}...")
+            #     continue
             seq = seq.sort_values(by='GPSTime')
 
             # collection_id = await create_collection(
@@ -74,9 +74,9 @@ async def main():
 
             await upload_images_to_geovisio(seq, collection_id)
             
-            await asyncio.sleep(120)
+            await asyncio.sleep(30)
             count += 1
-        await asyncio.sleep(120)
+        await asyncio.sleep(30)
         
 
     if upload_failures:

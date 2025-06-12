@@ -139,7 +139,7 @@ def data_preprocessing(csv_path: Path, time_threshold: int = 300, distance_thres
 if __name__ == "__main__":
     # Replace with your actual CSV file path
     csv_path = Path(
-        r"D:\MyProject\AIROADUpdate\data\raw\Subproject_1_sidewalk_markline.csv")
+        r"D:\MyProject\AIROADUpdate\data\raw\Subproject_1_10meters_rd.csv")
 
     df = data_preprocessing(csv_path)
     print(df.head())
