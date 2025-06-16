@@ -34,11 +34,11 @@ def group_by_date(df: pd.DataFrame) -> pd.DataFrame:
 
 async def main():
     # csv_path = Path(r"D:\MyProject\AIROADUpdate\data\raw\Subproject_1_sidewalk_markline.csv")  # Replace with your actual CSV file path
-    csv_path = Path(r"D:\MyProject\AIROADUpdate\data\raw\Subproject_1_10meters_rd.csv")
+    csv_path = Path(r"D:\MyProject\AIROADUpdate\data\raw\Subproject_1_10meters_rd_part2.csv")
     # Preprocess the data
     # If processing sidewalk markline data, set time threshold to 300 seconds and distance threshold to 20 meters
     # If processing 10 M width road data, set time threshold to 500 seconds and distance threshold to 200 meters
-    prcocessed_data = data_preprocessing(csv_path, time_threshold=500, distance_threshold=200.0)
+    prcocessed_data = data_preprocessing(csv_path, time_threshold=500, distance_threshold=1000.0)
     grouped_data = group_by_date(prcocessed_data)
     num_dates = len(grouped_data)
     logger.info(f"Total number of unique dates in the dataset: {num_dates}")
@@ -74,9 +74,9 @@ async def main():
 
             await upload_images_to_geovisio(seq, collection_id)
             
-            await asyncio.sleep(120)
+            await asyncio.sleep(10)
             count += 1
-        await asyncio.sleep(120)
+        await asyncio.sleep(10)
         
 
     if upload_failures:
