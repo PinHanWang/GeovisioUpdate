@@ -253,46 +253,80 @@ async def upload_image_to_collection(session, collection_id, keyname, gps_time, 
         "override_longitude": float(gps_x)
     }
 
+    # try:
+    #     logger.info(f"Starting upload of {keyname} (seq {seq}) to collection {collection_id}")
+        
+    #     async with session.get(img_url, timeout=timeout) as img_response:
+    #         if img_response.status == 200:
+    #             img_bytes = await img_response.read()
+    #             image_data = io.BytesIO(img_bytes)
+
+    #             form_data = aiohttp.FormData()
+    #             for k, v in data.items():
+    #                 form_data.add_field(k, str(v))
+    #             form_data.add_field(
+    #                 'picture',
+    #                 image_data,
+    #                 filename=Path(img_url).name,
+    #                 content_type='image/jpeg'
+    #             )
+
+    #             async with session.post(url, data=form_data, timeout=timeout) as post_response:
+    #                 if post_response.status in [200, 201, 202]:
+    #                     logger.info(f"Successfully uploaded item: {keyname}")
+    #                 else:
+    #                     text = await post_response.text()
+    #                     logger.warning(f"Failed to upload item {keyname}: {post_response.status} - {text}")
+    #                     raise Exception(f"Upload failed with status {post_response.status}")
+
+    #         else:
+    #             logger.warning(f"Failed to fetch image from {img_url}. Status code: {img_response.status}")
+    #             raise Exception(f"Image fetch failed with status {img_response.status}")
+
+    # except (asyncio.TimeoutError, asyncio.CancelledError) as e:
+    #     logger.error(f"Timeout when fetching image from {img_url}: {e}")
+    #     raise e 
+
+    # except Exception as e:
+    #     logger.error(f"Exception uploading item {keyname}: {e}")
+    #     raise e 
+    
+    # await asyncio.sleep(1)
+
     try:
         logger.info(f"Starting upload of {keyname} (seq {seq}) to collection {collection_id}")
 
-        async with session.get(img_url, timeout=timeout) as img_response:
-            if img_response.status == 200:
-                img_bytes = await img_response.read()
-                image_data = io.BytesIO(img_bytes)
+        image_path = os.path.join(r'E:\Peter\ImageDownload\subproject_1_10m_rd', f'{keyname}.jpg')
+        
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image file not found: {image_path}")
 
-                form_data = aiohttp.FormData()
-                for k, v in data.items():
-                    form_data.add_field(k, str(v))
-                form_data.add_field(
-                    'picture',
-                    image_data,
-                    filename=Path(img_url).name,
-                    content_type='image/jpeg'
-                )
+        with open(image_path, "rb") as f:
+            image_data = io.BytesIO(f.read())
 
-                async with session.post(url, data=form_data, timeout=timeout) as post_response:
-                    if post_response.status in [200, 201, 202]:
-                        logger.info(f"Successfully uploaded item: {keyname}")
-                    else:
-                        text = await post_response.text()
-                        logger.warning(f"Failed to upload item {keyname}: {post_response.status} - {text}")
-                        raise Exception(f"Upload failed with status {post_response.status}")
+        form_data = aiohttp.FormData()
+        for k, v in data.items():
+            form_data.add_field(k, str(v))
+        form_data.add_field(
+            'picture',
+            image_data,
+            filename=Path(image_path).name,
+            content_type='image/jpeg'
+        )
 
+        async with session.post(url, data=form_data, timeout=timeout) as post_response:
+            if post_response.status in [200, 201, 202]:
+                logger.info(f"Successfully uploaded item: {keyname}")
             else:
-                logger.warning(f"Failed to fetch image from {img_url}. Status code: {img_response.status}")
-                raise Exception(f"Image fetch failed with status {img_response.status}")
-
-    except (asyncio.TimeoutError, asyncio.CancelledError) as e:
-        logger.error(f"Timeout when fetching image from {img_url}: {e}")
-        raise e 
+                text = await post_response.text()
+                logger.warning(f"Failed to upload item {keyname}: {post_response.status} - {text}")
+                raise Exception(f"Upload failed with status {post_response.status}")
 
     except Exception as e:
         logger.error(f"Exception uploading item {keyname}: {e}")
-        raise e 
-    
-    await asyncio.sleep(1)
+        raise e
 
+    await asyncio.sleep(1)
 
 if __name__ == "__main__":
     # title = "Test Collection"
