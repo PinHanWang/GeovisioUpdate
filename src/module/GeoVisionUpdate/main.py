@@ -34,7 +34,7 @@ def group_by_date(df: pd.DataFrame) -> pd.DataFrame:
 
 async def main():
     # csv_path = Path(r"D:\MyProject\AIROADUpdate\data\raw\Subproject_1_sidewalk_markline.csv")  # Replace with your actual CSV file path
-    csv_path = Path(r"D:\MyProject\AIROADUpdate\data\raw\Subproject_1_10meters_rd_part2.csv")
+    csv_path = Path(r"E:\Peter\AIROADUpdate\data\raw\Subproject_1_10meters_rd_part2.csv")
     # Preprocess the data
     # If processing sidewalk markline data, set time threshold to 300 seconds and distance threshold to 20 meters
     # If processing 10 M width road data, set time threshold to 500 seconds and distance threshold to 200 meters
