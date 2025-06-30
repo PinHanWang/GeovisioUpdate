@@ -122,7 +122,7 @@ def data_preprocessing(csv_path: Path, time_threshold: int = 300, distance_thres
     # Calculate distance differences
     df_unique = get_distance_difference(df_unique)
     logger.info("Calculated distance_to_prev for each row.")   
-    df_unique = split_groups_by_time_and_distance(df_unique, time_threshold=300, distance_threshold=20.0)
+    df_unique = split_groups_by_time_and_distance(df_unique, time_threshold, distance_threshold)
     logger.info("Split data into groups based on time and distance thresholds.")
 
     subset_cols = ['KeyName', 'GPSTime', 'GPSTime_diff',
@@ -139,8 +139,8 @@ def data_preprocessing(csv_path: Path, time_threshold: int = 300, distance_thres
 if __name__ == "__main__":
     # Replace with your actual CSV file path
     csv_path = Path(
-        r"D:\MyProject\AIROADUpdate\data\raw\Subproject_1_10meters_rd.csv")
+        r"D:\MyProject\AIROADUpdate\data\raw\subproject_2_10meters_rd_part1.csv")
 
-    df = data_preprocessing(csv_path)
+    df = data_preprocessing(csv_path, 500, 1000.0)
     print(df.head())
     df.to_csv(csv_path.parent / "processed_data.csv", index=False)
