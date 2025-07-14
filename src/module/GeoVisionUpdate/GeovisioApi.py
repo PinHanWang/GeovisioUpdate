@@ -296,7 +296,7 @@ async def upload_image_to_collection(session, collection_id, keyname, gps_time, 
     try:
         logger.info(f"Starting upload of {keyname} (seq {seq}) to collection {collection_id}")
 
-        image_path = os.path.join(r'E:\Peter\ImageDownload\subproject_1_10m_rd', f'{keyname}.jpg')
+        image_path = os.path.join(r'E:\Peter\ImageDownload\10米以上道路\第二分案', f'{keyname}.jpg')
         
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image file not found: {image_path}")

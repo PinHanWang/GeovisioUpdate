@@ -33,50 +33,51 @@ def group_by_date(df: pd.DataFrame) -> pd.DataFrame:
 
 
 async def main():
-    # csv_path = Path(r"D:\MyProject\AIROADUpdate\data\raw\Subproject_1_sidewalk_markline.csv")  # Replace with your actual CSV file path
-    csv_path = Path(r"E:\Peter\AIROADUpdate\data\raw\Subproject_1_10meters_rd_part2.csv")
+    # csv_path = Path(r"E:\Peter\AIROADUpdate\data\標線型人行道\第一分案\Subproject_1_sidewalk_markline_part2.csv")  # Replace with your actual CSV file path
+    csv_path = Path(r"E:\Peter\AIROADUpdate\data\10米以上道路\第二分案\景翊20250703_part2.csv")
     # Preprocess the data
     # If processing sidewalk markline data, set time threshold to 300 seconds and distance threshold to 20 meters
     # If processing 10 M width road data, set time threshold to 500 seconds and distance threshold to 200 meters
-    prcocessed_data = data_preprocessing(csv_path, time_threshold=500, distance_threshold=1000.0)
+    prcocessed_data = data_preprocessing(csv_path, time_threshold=500, distance_threshold=200.0)
+    # prcocessed_data.to_csv(csv_path.parent / f"{csv_path.stem}_processed_data.csv", index=False)
     grouped_data = group_by_date(prcocessed_data)
     num_dates = len(grouped_data)
     logger.info(f"Total number of unique dates in the dataset: {num_dates}")
     for date, group in grouped_data: # for date, group in grouped_data:
         logger.info(f"Processing data for date: {date}")
-        # if date.strftime('%Y-%m-%d') == "2025-05-22" or date.strftime('%Y-%m-%d') == "2025-05-23" or date.strftime('%Y-%m-%d') == "2025-05-27":
-        #     logger.info(f"Skipping processing for {date}...")
-        #     continue  # Skip processing for this date
+        if date.strftime('%Y-%m-%d') == "2025-06-18":
+            logger.info(f"Skipping processing for {date}...")
+            continue  # Skip processing for this date
         seq_data = group.groupby('group_id')
         logger.info(f"Number of sequences for {date}: {len(seq_data)}")
         count = 0
         for seq_id, seq in seq_data:
             logger.info(f"{count+1}/{len(seq_data)} Processing sequence ID: {seq_id} for date: {date}")
-            if date.strftime('%Y-%m-%d') == "2025-05-08" and seq_id == 0:
-                logger.info(f"Skipping processing for {date} and sequence ID: {seq_id}...")
-                continue
+            # if date.strftime('%Y-%m-%d') == "2025-05-08" and seq_id == 0:
+            #     logger.info(f"Skipping processing for {date} and sequence ID: {seq_id}...")
+            #     continue
             seq = seq.sort_values(by='GPSTime')
 
-            # collection_id = await create_collection(
-            #     title=f"交工案第一分案資料蒐集(標人)",
-            #     description=f"Data collection for {date}; Sequence ID: {seq_id}",
-            #     keywords=["交工案", "第一分案", "標人", "資料蒐集", f"Sequence ID:{seq_id}", f"日期:{date}"],
-            #     )
-        
             collection_id = await create_collection(
-                title=f"交工案第一分案資料蒐集(10米寬以上道路) Date: {date}; Sequence ID: {seq_id}",
+                title=f"交工案第一分案資料蒐集(10米以上道路) Date: {date}; Sequence ID: {seq_id}",
                 description=f"Data collection for {date}; Sequence ID: {seq_id}",
-                keywords=["交工案", "第一分案", "10米寬以上道路", "資料蒐集", f"Sequence ID:{seq_id}", f"日期:{date}"],
+                keywords=["交工案", "第一分案", "10米以上道路", "資料蒐集", f"Sequence ID:{seq_id}", f"日期:{date}"],
                 )
+        
+            # collection_id = await create_collection(
+            #     title=f"AIROAD台北案6月保固更新 Date: {date}; Sequence ID: {seq_id}",
+            #     description=f"Data collection for {date}; Sequence ID: {seq_id}",
+            #     keywords=["AIROAD", "台北案", "6月保固更新", "資料蒐集", f"Sequence ID:{seq_id}", f"日期:{date}"],
+            #     )
             
             logger.debug(f"Created collection with ID: {collection_id}")
-            logger.debug(f"title=交工案第一分案資料蒐集(10米寬以上道路) Date: {date}; Sequence ID: {seq_id}")
+            logger.debug(f"title= 交工案第一分案資料蒐集(10米以上道路) Date: {date}; Sequence ID: {seq_id}")
 
             await upload_images_to_geovisio(seq, collection_id)
             
-            await asyncio.sleep(10)
+            await asyncio.sleep(3)
             count += 1
-        await asyncio.sleep(10)
+        await asyncio.sleep(600)
         
 
     if upload_failures:

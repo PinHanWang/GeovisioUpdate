@@ -122,15 +122,15 @@ def data_preprocessing(csv_path: Path, time_threshold: int = 300, distance_thres
     # Calculate distance differences
     df_unique = get_distance_difference(df_unique)
     logger.info("Calculated distance_to_prev for each row.")   
-    df_unique = split_groups_by_time_and_distance(df_unique, time_threshold=300, distance_threshold=20.0)
+    df_unique = split_groups_by_time_and_distance(df_unique, time_threshold, distance_threshold)
     logger.info("Split data into groups based on time and distance thresholds.")
-
+    logger.info(f"Number of groups created: {df_unique['group_id'].nunique()}")
     subset_cols = ['KeyName', 'GPSTime', 'GPSTime_diff',
                    'GPS_X', 'GPS_Y', 'distance_to_prev','group_id','speed', 'url']
     
-    if (df_unique['GPSTime_diff'] > 60.0).any():
+    if (df_unique['GPSTime_diff'] > time_threshold).any():
         logger.warning("Warning: Some GPSTime_diff values are greater than 60 seconds.")
-        warning_df = df_unique[df_unique['GPSTime_diff'] > 60.0]
+        warning_df = df_unique[df_unique['GPSTime_diff'] > time_threshold]
         # warning_df.to_csv(csv_path.parent / "warning_data.csv", index=False)
 
     return df_unique[subset_cols]
