@@ -77,9 +77,15 @@ async def main():
 
             await upload_images_to_geovisio(seq, collection_id)
             
+<<<<<<< HEAD
             await asyncio.sleep(3)
             count += 1
         await asyncio.sleep(300)
+=======
+            await asyncio.sleep(10)
+            count += 1
+        await asyncio.sleep(10)
+>>>>>>> b9df5d323f5378a812064bf19ea59f6c5ee66d0c
         
 
     if upload_failures:

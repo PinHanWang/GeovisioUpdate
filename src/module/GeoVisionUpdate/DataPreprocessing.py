@@ -139,8 +139,8 @@ def data_preprocessing(csv_path: Path, time_threshold: int = 300, distance_thres
 if __name__ == "__main__":
     # Replace with your actual CSV file path
     csv_path = Path(
-        r"D:\MyProject\AIROADUpdate\data\raw\Subproject_1_10meters_rd.csv")
+        r"D:\MyProject\AIROADUpdate\data\raw\subproject_2_10meters_rd_part1.csv")
 
-    df = data_preprocessing(csv_path)
+    df = data_preprocessing(csv_path, 500, 1000.0)
     print(df.head())
     df.to_csv(csv_path.parent / "processed_data.csv", index=False)
