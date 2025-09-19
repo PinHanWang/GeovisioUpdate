@@ -6,23 +6,6 @@ from pathlib import Path
 import pandas as pd
 from pyproj import Transformer
 
-# def _getExifStartTime(p: Path) -> tuple[int, str]:
-#     """
-#         取得檔案的EXIF資訊並計算出影像的第一秒GPS時間
-#         影像開始時間(startDate) = 檔案創建時間(createDate) - 影像持續時間(duration)
-#         檔案創建時間為整個錄影完成後
-#     """
-#     fps, startDate = -1, ""
-#     cmd = f"exiftool -s {str(p)} -VideoFrameRate -CreateDate -Duration"
-#     with os.popen(cmd) as t:
-#         context = t.read()[:-1]
-#         l = [x.split(": ")[1] for x in context.split("\n")]
-#         fps = float(l[0])
-#         createDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S")
-#         duration = datetime.strptime(l[2], "%H:%M:%S")
-#         startDate = createDate - timedelta(minutes = duration.minute, seconds = duration.second)
-#     return fps, startDate.strftime("%Y:%m:%d %H:%M:%S")
-
 def _getExifStartTime(p: Path) -> tuple[int, str]:
     """
         取得檔案的EXIF資訊並計算出影像的第一秒GPS時間
@@ -30,13 +13,30 @@ def _getExifStartTime(p: Path) -> tuple[int, str]:
         檔案創建時間為整個錄影完成後
     """
     fps, startDate = -1, ""
-    cmd = f"exiftool -s {str(p)} -VideoFrameRate -FileCreateDate"
+    cmd = f"exiftool -s {str(p)} -VideoFrameRate -CreateDate -Duration"
     with os.popen(cmd) as t:
         context = t.read()[:-1]
         l = [x.split(": ")[1] for x in context.split("\n")]
         fps = float(l[0])
-        startDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S%z")
-    return fps, startDate.strftime("%Y:%m:%d %H:%M:%S") 
+        createDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S")
+        duration = datetime.strptime(l[2], "%H:%M:%S")
+        startDate = createDate - timedelta(minutes = duration.minute, seconds = duration.second)
+    return fps, startDate.strftime("%Y:%m:%d %H:%M:%S")
+
+# def _getExifStartTime(p: Path) -> tuple[int, str]:
+#     """
+#         取得檔案的EXIF資訊並計算出影像的第一秒GPS時間
+#         影像開始時間(startDate) = 檔案創建時間(createDate) - 影像持續時間(duration)
+#         檔案創建時間為整個錄影完成後
+#     """
+#     fps, startDate = -1, ""
+#     cmd = f"exiftool -s {str(p)} -VideoFrameRate -FileCreateDate"
+#     with os.popen(cmd) as t:
+#         context = t.read()[:-1]
+#         l = [x.split(": ")[1] for x in context.split("\n")]
+#         fps = float(l[0])
+#         startDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S%z")
+#     return fps, startDate.strftime("%Y:%m:%d %H:%M:%S") 
 
 def _getExifExtractEmbeddedData(p: Path) -> dict:
     """
@@ -133,12 +133,18 @@ if __name__ == '__main__':
     #     out = (folder / f"{file.stem}.csv")
     #     saveExifCsv(df, out)
 
+    folder = Path(r"H:\DCIM\Movie")
+    for f in folder.iterdir():
+        if f.suffix == ".MP4":
+            exifDf = makeExifDf(f)
+            saveExifCsv(exifDf, f.with_suffix(".csv"))
+            print(f"{f.stem} done")
 
-    videoPath = Path(r"H:\DCIM\Movie\20250319102434_000014A.MP4")
-    # fps, startDate = _getExifStartTime(videoPath)
-    # print(fps, startDate)
-    exifDf = makeExifDf(videoPath)
-    saveExifCsv(exifDf, videoPath.with_suffix(".csv"))
+    # videoPath = Path(r"H:\DCIM\Movie\20250703130346_000030A.MP4")
+    # # fps, startDate = _getExifStartTime(videoPath)
+    # # print(fps, startDate)
+    # exifDf = makeExifDf(videoPath)
+    # saveExifCsv(exifDf, videoPath.with_suffix(".csv"))
     # print(exifDf)
-    # data = _getExifExtractEmbeddedData(videoPath)
-    # print(data)
+    # # data = _getExifExtractEmbeddedData(videoPath)
+    # # print(data)

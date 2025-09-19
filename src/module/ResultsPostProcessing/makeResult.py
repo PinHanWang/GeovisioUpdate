@@ -6,7 +6,7 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-import make
+# import make
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 # from src.module.utlis import makeExif # import同目錄下的exif.py
 
@@ -179,8 +179,8 @@ if __name__ == '__main__':
     #         saveResultCsv(labelPath, df)
     #     else:
     #         print(f"{labelPath.stem} skip")
-    exif_folder  = Path(r"output\exif\0408")
-    label_folder = Path(r"output\prediction\0408")
+    exif_folder  = Path(r"output\exif\0703")
+    label_folder = Path(r"output\prediction\0703")
     exif_files = exif_folder.glob("2025*A.csv")  # 儲存 labels 的檔案
 
     for exif_file in exif_files:
