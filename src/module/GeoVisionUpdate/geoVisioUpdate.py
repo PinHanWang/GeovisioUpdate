@@ -137,43 +137,25 @@ if __name__ == '__main__':
         20250319114434_000030A(這部到01:15)
     """
     
-<<<<<<< HEAD
-    SOURCE = Path(r"H:\DCIM\Movie\AIROAD_Sept\Ruiguang")
-=======
     SOURCE = Path(r"C:\Users\TMS-24003\Downloads\Archive")
->>>>>>> dev-tmsgeovisio
 
     # Step1: 手動定義上傳路線(相關資訊妤玲會給)
     startSec = None  # 01:30 = 90秒(如果沒寫開始時間可以不用給)
     endSec = None  # 01:15 = 75秒(如果沒寫結束時間可以不用給)
     videos = [
-<<<<<<< HEAD
         "20250915135113_000033A",
         "20250915135613_000034A",
         "20250915142613_000040A",
         "20250915143613_000042A",
         "20250915144113_000043A"
-=======
-        "20250516105050_000019A",
-        "20250516105550_000020A",
-        "20250516110050_000021A",
-        # ""    # 影片名稱(不需要副檔名)
->>>>>>> dev-tmsgeovisio
     ]  # 影片要照順序
 
 
     # Step2: 準備上傳GeoVisio用材料(saveCsv=True 會將df內容儲存成 SOURCE/title.csv 檔案)
     title = videos[0]  # title為第一部影片的名稱
-<<<<<<< HEAD
     df = prepareImages(SOURCE, title, videos, startSec, endSec, saveCsv = True)
     # df = pd.read_csv(str((SOURCE / f"{title}.csv")))
     # print(df)
-=======
-    df = prepareImages(SOURCE, title, videos, startSec, endSec, saveCsv = False)
-    # df.to_csv(SOURCE / f"srceenshot_{title}.csv")
-    # print(df)
-    # df  = pd.read_csv(SOURCE / f"srceenshot_{title}.csv", index_col=0)
->>>>>>> dev-tmsgeovisio
     
     
     # Step3: 使用API上傳GeoVisio
