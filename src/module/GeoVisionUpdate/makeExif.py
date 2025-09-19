@@ -16,7 +16,7 @@ def _getExifStartTime(p: Path) -> tuple[int, str]:
     cmd = f"exiftool -s {str(p)} -VideoFrameRate -CreateDate -Duration"
     with os.popen(cmd) as t:
         context = t.read()[:-1]
-        l = [x.split(": ")[1] for x in context.split("\n")]
+        l = [x.split(": ")[1] for x in context.split("\n") if ": " in x]
         fps = float(l[0])
         createDate = datetime.strptime(l[1], "%Y:%m:%d %H:%M:%S")
         duration = datetime.strptime(l[2], "%H:%M:%S")

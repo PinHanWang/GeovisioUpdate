@@ -6,7 +6,7 @@ from tqdm import trange
 import pandas as pd
 import requests
 
-IP = "202.5.253.237"
+IP = "192.168.61.1"
 PORT = 5000
 
 def timeParser(sourceDatetime: str, oldFormat: str = None, newFormat: str = None) -> str:
