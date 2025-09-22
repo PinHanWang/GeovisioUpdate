@@ -3,9 +3,9 @@ from datetime import date
 
 import pandas as pd
 
-import makeExif
-import makeScreenshot
-import useGeoVisioApi
+import src.module.GeoVisionUpdate.TWCC.makeExif as makeExif
+import src.module.GeoVisionUpdate.TWCC.makeScreenshot as makeScreenshot
+import src.module.GeoVisionUpdate.TWCC.useGeoVisioApi as useGeoVisioApi
 
 def getExifDf(videoPath: Path, columns: list[str], startSec: int = None, endSec: int = None) -> pd.DataFrame:
     """
