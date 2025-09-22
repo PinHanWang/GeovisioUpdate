@@ -23,6 +23,7 @@ TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
 CSV_PATH = os.getenv("CSV_PATH")
 SEQUENCE_DELAY = int(os.getenv("SEQUENCE_DELAY", "3"))
 BATCH_DELAY = int(os.getenv("BATCH_DELAY", "300"))
+VEHICLE_TYPE = os.getenv("VEHICLE_TYPE", "CAR")
 
 
 def validate_env() -> None:
@@ -412,8 +413,10 @@ async def main():
         
         # If processing sidewalk markline data, set time threshold to 300 seconds and distance threshold to 20 meters
         # If processing 10 M width road data, set time threshold to 500 seconds and distance threshold to 200 meters
-        processed_data = data_preprocessing(
-            csv_path, time_threshold=500, distance_threshold=200.0)
+        if VEHICLE_TYPE == "CAR":
+            processed_data = data_preprocessing(csv_path, time_threshold=500, distance_threshold=200.0)
+        elif VEHICLE_TYPE =='MOTORCYCLE':
+            processed_data = data_preprocessing(csv_path, time_threshold=300, distance_threshold=20.0)
 
         if processed_data.empty:
             logger.warning("No data to process.")
