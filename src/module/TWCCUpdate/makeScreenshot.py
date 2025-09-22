@@ -2,7 +2,7 @@ from pathlib import Path
 
 import cv2
 
-import src.module.GeoVisionUpdate.TWCC.makeExif as makeExif  # import同目錄下的exif.py
+import src.module.GeoVisionUpdate.TWCCUpdate.makeExif as makeExif  # import同目錄下的exif.py
 
 def screenshot(videoPath: Path, imagesPath: Path, frames: list[int] = []) -> None:
     """
