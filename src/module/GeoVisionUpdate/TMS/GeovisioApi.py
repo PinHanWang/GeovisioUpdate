@@ -6,129 +6,203 @@ import pandas as pd
 import io
 from pathlib import Path
 import aiohttp
+import aiofiles
 from aiohttp import ClientTimeout
 import asyncio
 from failures import upload_failures, collection_failures
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type, RetryError
 import logging.config
 from logger import LOGGING_CONFIG
+
+# 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 
+# 載入環境變量
 load_dotenv()
 TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
-print(f"TMS_GEOVISIO_URL: {TMS_GEOVISIO_URL}")
+IMAGE_BASE_PATH = os.getenv("IMAGE_BASE_PATH")
+MAX_CONCURRENT_UPLOADS = int(os.getenv("MAX_CONCURRENT_UPLOADS", "5"))
+UPLOAD_TIMEOUT = int(os.getenv("UPLOAD_TIMEOUT", "60"))
+
+logger.info(f"TMS_GEOVISIO_URL: {TMS_GEOVISIO_URL}")
+logger.info(f"IMAGE_BASE_PATH: {IMAGE_BASE_PATH}")
 
 
-
+# 設定重試策略
 def log_retry_error(retry_state):
-    collection_id = retry_state.args[1]
-    keyname = retry_state.args[2]
-    logger.error(f"Upload permanently failed after retries: {keyname} in collection {collection_id}")
+    """
+    當重試嘗試永久失敗時記錄錯誤。
 
+    此函數使用日誌記錄器記錄錯誤，將錯誤附加到 upload_failures 列表中，
+    並將 collection_id 添加到 collection_failures 集合中。
+
+    參數
+    ----
+    retry_state : tenacity.RetryCallState
+        重試嘗試的狀態物件。
+
+    注意事項
+    --------
+    此函數假設 retry_state 物件具有以下屬性：
+    - args: 包含 collection_id 和 keyname 的元組
+    - kwargs: 包含 collection_id 和 keyname 的字典
+    - outcome: 重試嘗試的結果
+    - attempt_number: 重試嘗試的次數
+    """
+    if hasattr(retry_state, 'args') and len(retry_state.args) >= 3:
+        collection_id = retry_state.args[1]
+        keyname = retry_state.args[2]
+    else:
+        collection_id = retry_state.kwargs.get('collection_id', 'Unknown')
+        keyname = retry_state.kwargs.get('keyname', 'Unknown')
+
+    error_msg = str(retry_state.outcome.exception(
+    )) if retry_state.outcome and retry_state.outcome.exception() else "Unknown error"
+
+    logger.error(
+        f"Upload permanently failed after retries: {keyname} in collection {collection_id}, Error: {error_msg}")
 
     upload_failures.append({
         'KeyName': keyname,
         'CollectionID': collection_id,
-        "Error": str(retry_state.outcome.exception()) if retry_state.outcome else "Unknown"
+        "Error": error_msg,
+        "RetryCount": retry_state.attempt_number
     })
     collection_failures.add(collection_id)
-@retry(
-    stop=stop_after_attempt(5),
-    wait=wait_fixed(5),
-    retry=retry_if_exception_type(Exception),
-    retry_error_callback=log_retry_error
-)
 
-def get_all_collections():
+
+# 取得所有collection
+async def get_all_collections():
+    """
+        從 GeoVisio 獲取所有集合。
+
+        返回值
+        ------
+        dict
+            包含所有 GeoVisio 集合的字典。
+
+        異常
+        ----
+        Exception
+            獲取集合時發生錯誤。
+    """
     url = f"{TMS_GEOVISIO_URL}/api/collections"
-    try:
-        logger.info(f"Fetching all collections.")
-        response = requests.get(url)
+    async with aiohttp.ClientSession() as session:
 
-        if response.status_code == 200:
-            data = response.json()
+        try:
+            logger.info(f"Fetching all collections.")
 
-            output_dir = r'output\geovisio'
-            os.makedirs(output_dir, exist_ok=True)
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    output_dir = r'output\geovisio'
+                    os.makedirs(output_dir, exist_ok=True)
 
-            output_file = os.path.join(output_dir, 'all_collections.json')
+                    output_file = os.path.join(
+                        output_dir, 'all_collections.json')
 
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
+                    async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+                        await f.write(json.dumps(data, ensure_ascii=False, indent=4))
 
-            logger.info(f"All collections saved to {output_file}")
-        else:
+                    logger.info(f"All collections saved to {output_file}")
+                    return data
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to fetch collections. Status code: {response.status}, Error: {error_text}")
+                    return None
+        except Exception as e:
             logger.error(
-                f"Failed to fetch collections. Status code: {response.status_code}")
-            logger.error(f"Response: {response.text}")
-    except Exception as e:
-        logger.error(f"An error occurred while fetching collections: {e}")
+                f"An error occurred while fetching collections: {e}")
+            return None
 
 
-def get_collection_by_items_id(collection_id):
+# 取得collection by id
+async def get_collection_by_items_id(collection_id):
+    """
+        取得 GeoVisio 集合的詳細資訊。
+
+        參數
+        ----
+        collection_id : str
+            要取得的集合 ID。
+
+        返回值
+        ------
+        dict
+            集合的詳細資訊。
+
+        異常
+        ----
+        Exception
+            取得集合時發生錯誤。
+    """
     url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}"
-    try:
-        logger.info(f"Fetching collection with ID: {collection_id}")
-        response = requests.get(url)
 
-        if response.status_code == 200:
-            data = response.json()
+    async with aiohttp.ClientSession() as session:
+        try:
+            logger.info(f"Fetching collection with ID: {collection_id}")
 
-            output_dir = r'output\geovisio'
-            os.makedirs(output_dir, exist_ok=True)
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
 
-            output_file = os.path.join(
-                output_dir, f'collection_{collection_id}.json')
+                    output_dir = r'output\geovisio'
+                    os.makedirs(output_dir, exist_ok=True)
 
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=4)
+                    output_file = os.path.join(
+                        output_dir, f'collection_{collection_id}.json')
 
-            logger.info(f"Collection {collection_id} saved to {output_file}")
-        else:
+                    async with aiofiles.open(output_file, 'w', encoding='utf-8') as f:
+                        await f.write(json.dumps(data, ensure_ascii=False, indent=4))
+
+                    logger.info(
+                        f"Collection {collection_id} saved to {output_file}")
+                    return data
+                else:
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to fetch collection {collection_id}. Status code: {response.status}, Error: {error_text}")
+                    return None
+        except Exception as e:
             logger.error(
-                f"Failed to fetch collection {collection_id}. Status code: {response.status_code}")
-            logger.error(f"Response: {response.text}")
-    except Exception as e:
-        logger.error(
-            f"An error occurred while fetching collection {collection_id}: {e}")
+                f"An error occurred while fetching collection {collection_id}: {e}")
+            return None
 
 
-# def create_collection(title, description, bbox=None, start_time=None):
-#     url = f"{TMS_GEOVISIO_URL}/api/collections"
-
-#     extent = {}
-#     if bbox:
-#         extent["spatial"] = {"bbox": [bbox]}
-#     if start_time is not None:
-#         extent["temporal"] = {"interval": [[start_time, None]]}
-#     else:
-#         extent["temporal"] = {"interval": [[None, None]]}
-
-#     payload = {
-#         "title": title,
-#         "description": description,
-#         "license": "proprietary",
-#         "keywords": ["test", "upload"],
-#         "extent": extent
-#     }
-
-#     try:
-#         response = requests.post(url, json=payload)
-#         if response.status_code in [200, 201]:
-#             data = response.json()
-#             print("Collection created:", data["id"])
-#             return data["id"]
-#         else:
-#             print(f"Failed to create collection: {response.status_code}")
-#             print(response.text)
-#     except Exception as e:
-#         print("Error:", e)
-#     return None
-
-
+# 新增collection
 async def create_collection(title, description, keywords, bbox=None, start_time=None):
+    """
+    創建 GeoVisio 集合
+
+    參數
+    ----
+    title : str
+        集合的標題
+    description : str
+        集合的描述
+    keywords : list[str]
+        集合的關鍵字
+    bbox : list[float], optional
+        集合的 bounding box，預設為 None
+    start_time : datetime, optional
+        集合的開始時間，預設為 None
+
+    返回值
+    ------
+    str
+        創建的集合 ID
+
+    異常
+    ----
+    Exception
+        創建集合時發生錯誤
+    """
     url = f"{TMS_GEOVISIO_URL}/api/collections"
+
+    if keywords is None:
+        keywords = ['upload', 'api']
 
     extent = {}
     if bbox:
@@ -154,95 +228,68 @@ async def create_collection(title, description, keywords, bbox=None, start_time=
                     logger.info(f"Collection created: {data['id']}")
                     return data["id"]
                 else:
-                    logger.error(f"Failed to create collection {response.status}")
-                    logger.error(await response.text())
+                    error_text = await response.text()
+                    logger.error(
+                        f"Failed to create collection. Status code: {response.status}, Error: {error_text}"
+                    )
+                    return None
+
         except Exception as e:
-            print("Error:", e)
+            logger.error(f"An error occurred while creating collection: {e}")
     return None
 
-# def upload_images_to_geovisio(df, collection_id):
 
-#     # parse the DataFrame to extract necessary columns
-#     for index, row in df.iterrows():
-#         keyname = row['KeyName']
-#         gps_time = row['GPSTime']
-#         gps_x = row['GPS_X']
-#         gps_y = row['GPS_Y']
-#         speed = row['speed']
-#         img_url = row['url']
-#         seq = index + 1  # Assuming seq is just the index + 1 for ordering
-
-#         # Call the function to upload each image
-#         upload_image_to_collection(collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
-
-semaphore = asyncio.Semaphore(5)
-async def safe_upload_image(session, semaphore, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
-    async with semaphore:
-        await upload_image_to_collection(session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
-
-async def upload_images_to_geovisio(df, collection_id):
-    semaphore = asyncio.Semaphore(5)
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        index = 0
-        for _, row in df.iterrows():
-            keyname = row['KeyName']
-            gps_time = row['GPSTime']
-            gps_x = row['GPS_X']
-            gps_y = row['GPS_Y']
-            speed = row['speed']
-            img_url = row['url']
-            seq = index + 1
-
-            task = safe_upload_image(session, semaphore, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
-            tasks.append(task)
-            index += 1
-
-        await asyncio.gather(*tasks)
-        
-
-
-# # Upload an image to a specific collection in GeoVisio
-# def upload_image_to_collection(collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
-
-#     url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}/items"
-
-#     # Prepare the data to be sent in the request
-#     data = {
-#         "position": seq,
-#         "isBlurred": "false",  # whether the image is blurred or not
-#         "override_capture_time": gps_time,  # override the capture time
-#         "override_latitude": float(gps_y),
-#         "override_longitude": float(gps_x)
-#     }
-
-#     try:
-#         # Fetch the image from the URL
-#         response = requests.get(img_url)
-#         if response.status_code == 200:
-#             # Prepare the image file for upload
-#             image_data = io.BytesIO(response.content)
-#             files_ = {"picture": (Path(img_url).name, image_data, "image/jpeg")}
-#         else:
-#             print(f"Failed to fetch image from {img_url}. Status code: {response.status_code}")
-#             return 404
-#     except Exception as e:
-#         print(f"Error fetching image from {img_url}: {e}")
-#         return 404
-
-#     # Send the POST request to upload the image
-#     try:
-#         response = requests.post(url, data=data, files=files_)
-#         if response.status_code in [200, 201, 202]:
-#             print(f"Uploaded item: {keyname}")
-#         else:
-#             print(f"Failed to upload item {keyname}: {response.status_code}")
-#             print(response.text)
-#     except Exception as e:
-#         print(f"Error uploading item {keyname}: {e}")
-
-timeout = ClientTimeout(total=60) 
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_fixed(5),
+    retry=retry_if_exception_type(
+        aiohttp.ClientError, asyncio.TimeoutError, FileNotFoundError),
+    retry_error_callback=log_retry_error
+)
+# 上傳圖片集合
 async def upload_image_to_collection(session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
+    """
+    上傳圖片集合到 GeoVision
+
+    Parameters
+    ----------
+    session : aiohttp.ClientSession
+        GeoVision API 連線 session
+    collection_id : str
+        上傳的集合 ID
+    keyname : str
+        上傳的圖片名稱
+    gps_time : str
+        上傳的圖片 GPS 時間
+    gps_x : float
+        上傳的圖片 GPS 緯度
+    gps_y : float
+        上傳的圖片 GPS 經度
+    speed : float
+        上傳的圖片 GPS 速度
+    img_url : str
+        上傳的圖片 URL
+    seq : int
+        上傳的圖片順序
+
+    Returns
+    -------
+    bool
+        上傳成功則返回 True，否則返回 False
+
+    Raises
+    ------
+    aiohttp.ClientError
+        上傳時發生錯誤
+    asyncio.TimeoutError
+        上傳時超時
+    asyncio.CancelledError
+        上傳被取消
+    FileNotFoundError
+        圖片檔案不存在
+    Exception
+        其他上傳錯誤
+    """
     url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}/items"
 
     data = {
@@ -252,10 +299,10 @@ async def upload_image_to_collection(session, collection_id, keyname, gps_time, 
         "override_latitude": float(gps_y),
         "override_longitude": float(gps_x)
     }
-
+    ###
     # try:
     #     logger.info(f"Starting upload of {keyname} (seq {seq}) to collection {collection_id}")
-        
+
     #     async with session.get(img_url, timeout=timeout) as img_response:
     #         if img_response.status == 200:
     #             img_bytes = await img_response.read()
@@ -285,24 +332,32 @@ async def upload_image_to_collection(session, collection_id, keyname, gps_time, 
 
     # except (asyncio.TimeoutError, asyncio.CancelledError) as e:
     #     logger.error(f"Timeout when fetching image from {img_url}: {e}")
-    #     raise e 
+    #     raise e
 
     # except Exception as e:
     #     logger.error(f"Exception uploading item {keyname}: {e}")
-    #     raise e 
-    
+    #     raise e
+
     # await asyncio.sleep(1)
+    ###
 
     try:
-        logger.info(f"Starting upload of {keyname} (seq {seq}) to collection {collection_id}")
+        logger.info(
+            f"Starting upload of {keyname} (seq {seq}) to collection {collection_id}")
 
-        image_path = os.path.join(r'E:\Peter\ImageDownload\10米以上道路\未來分案', f'{keyname}.jpg')
-        
+        image_path = os.path.join(IMAGE_BASE_PATH, f'{keyname}.jpg')
+
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"Image file not found: {image_path}")
 
-        with open(image_path, "rb") as f:
-            image_data = io.BytesIO(f.read())
+        try:
+            async with aiofiles.open(image_path, "rb") as f:
+                image_bytes = await f.read()
+        except Exception as e:
+            logger.error(f"Failed to read image file {image_path}: {e}")
+            raise e
+
+        image_data = io.BytesIO(image_bytes)
 
         form_data = aiohttp.FormData()
         for k, v in data.items():
@@ -313,20 +368,152 @@ async def upload_image_to_collection(session, collection_id, keyname, gps_time, 
             filename=Path(image_path).name,
             content_type='image/jpeg'
         )
+        timeout = ClientTimeout(total=UPLOAD_TIMEOUT)
 
         async with session.post(url, data=form_data, timeout=timeout) as post_response:
             if post_response.status in [200, 201, 202]:
                 logger.info(f"Successfully uploaded item: {keyname}")
+                return True
             else:
-                text = await post_response.text()
-                logger.warning(f"Failed to upload item {keyname}: {post_response.status} - {text}")
-                raise Exception(f"Upload failed with status {post_response.status}")
+                error_text = await post_response.text()
+                error_msg = f"Failed to upload item {keyname}: {post_response.status} - {error_text}"
+                logger.warning(error_msg)
+                raise aiohttp.ClientError(error_msg)
+
+    except (asyncio.TimeoutError, asyncio.CancelledError) as e:
+        logger.error(
+            f"Timeout / Cancellation when fetching image from {image_path}: {e}")
+        raise
 
     except Exception as e:
         logger.error(f"Exception uploading item {keyname}: {e}")
-        raise e
+        raise
+
+    finally:
+        if 'image_data' in locals():
+            image_data.close()
 
     await asyncio.sleep(1)
+
+# 上傳圖片
+
+
+async def safe_upload_image(session, semaphore, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq):
+    """
+    安全上傳圖片到GeoVisio
+
+    Parameters
+    ----------
+    session : aiohttp.ClientSession
+        用於上傳圖片的ClientSession
+    semaphore : asyncio.Semaphore
+        用於限制上傳圖片的同時數量
+    collection_id : str
+        上傳圖片的CollectionID
+    keyname : str
+        上傳圖片的KeyName
+    gps_time : str
+        上傳圖片的GPS時間
+    gps_x : float
+        上傳圖片的GPS經度
+    gps_y : float
+        上傳圖片的GPS緯度
+    speed : float
+        上傳圖片的速度
+    img_url : str
+        上傳圖片的URL
+    seq : int
+        上傳圖片的Sequence
+
+    Returns
+    -------
+    bool
+        上傳成功則返回 True，否則返回 False
+    """
+
+    async with semaphore:
+        try:
+            result = await upload_image_to_collection(session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
+            return result
+
+        except Exception as e:
+            logger.error(
+                f"Failed to upload image {keyname} after all retries: {e}")
+            return False
+
+
+async def upload_images_to_geovisio(df, collection_id):
+    """
+    上傳圖片到 GeoVisio
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        上傳圖片的DataFrame
+    collection_id : str
+        上傳圖片的CollectionID
+
+    Returns
+    -------
+    None
+    """
+    if df.empty:
+        logger.warning("DataFrame is empty. No images to upload.")
+        return
+
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_UPLOADS)
+
+    timeout = ClientTimeout(total=UPLOAD_TIMEOUT * 2)
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        tasks = []
+
+        index = 0
+        for _, row in df.iterrows():
+            required_columns = ['KeyName', 'GPSTime',
+                                'GPS_X', 'GPS_Y', 'speed', 'url']
+            missing_columns = [
+                col for col in required_columns if col not in row or pd.isna(row[col])]
+
+            if missing_columns:
+                logger.warning(
+                    f"Skipping row {index + 1} due to missing columns: {', '.join(missing_columns)}")
+                index += 1
+                continue
+
+            keyname = row['KeyName']
+            gps_time = row['GPSTime']
+            gps_x = row['GPS_X']
+            gps_y = row['GPS_Y']
+            speed = row['speed']
+            img_url = row['url']
+            seq = index + 1
+
+            task = safe_upload_image(
+                session, semaphore, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
+            tasks.append(task)
+            index += 1
+
+        if not tasks:
+            logger.warning(
+                "No valid rows found in the DataFrame. No images to upload.")
+            return
+
+        logger.info(
+            f"Uploading {len(tasks)} images to collection {collection_id}")
+
+        try:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            sucessful_uploads = sum(1 for r in results if r is True)
+            failed = len(results) - sucessful_uploads
+
+            logger.info(
+                f"Successfully uploaded {sucessful_uploads} images, {failed} failed.")
+
+        except Exception as e:
+            logger.error(f"An error occurred while uploading images: {e}")
+
 
 if __name__ == "__main__":
     # title = "Test Collection"

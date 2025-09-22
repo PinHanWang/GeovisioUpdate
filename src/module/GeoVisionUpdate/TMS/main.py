@@ -1,5 +1,5 @@
 from DataPreprocessing import data_preprocessing
-from src.module.GeoVisionUpdate.GeovisioApi import create_collection, upload_images_to_geovisio, get_all_collections
+from GeovisioApi import create_collection, upload_images_to_geovisio, get_all_collections
 import os
 from pathlib import Path
 import pandas as pd
