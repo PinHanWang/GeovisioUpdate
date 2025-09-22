@@ -1,1 +1,44 @@
-# Add your dependencies here
+# Core data processing packages
+pandas>=1.5.0
+numpy>=1.21.0
+
+# Async HTTP client and file handling
+aiohttp>=3.8.0
+aiofiles>=22.0.0
+
+# Environment configuration
+python-dotenv>=0.19.0
+
+# Geospatial coordinate transformation
+pyproj>=3.4.0
+
+# Date and time handling with timezone support
+zoneinfo>=0.1.0  # Python 3.9+, backport for older versions
+pytz>=2022.1
+
+# Retry mechanism for API calls
+tenacity>=8.2.0
+
+# HTTP requests (synchronous)
+requests>=2.28.0
+
+# File path handling (built-in)
+# pathlib is part of Python standard library
+
+# System utilities (built-in)
+# os, sys, time, asyncio are part of Python standard library
+
+# JSON and IO handling (built-in)
+# json, io are part of Python standard library
+
+# Logging (built-in)
+# logging is part of Python standard library
+
+# Date and time (built-in)
+# datetime is part of Python standard library
+
+# Development packages (uncomment if needed)
+# pytest>=7.0.0
+# pytest-asyncio>=0.20.0
+# black>=22.0.0
+# flake8>=4.0.0
