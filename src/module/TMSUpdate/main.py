@@ -20,7 +20,7 @@ logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 load_dotenv()
 TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
-CSV_PATH = os.getenv("CSV_PATH")
+CSV_FILE_PATH = os.getenv("CSV_FILE_PATH")
 SEQUENCE_DELAY = int(os.getenv("SEQUENCE_DELAY", "3"))
 BATCH_DELAY = int(os.getenv("BATCH_DELAY", "300"))
 VEHICLE_TYPE = os.getenv("VEHICLE_TYPE", "CAR")
@@ -47,11 +47,11 @@ def validate_env() -> None:
         raise TypeError(
             "TMS_GEOVISIO_URL must be a string.")
     
-    if CSV_PATH is None:
+    if CSV_FILE_PATH is None:
         raise ValueError(
             "CSV_PATH is not set in the environment variables.")
     
-    if not isinstance(CSV_PATH, str):
+    if not isinstance(CSV_FILE_PATH, str):
         raise TypeError(
             "CSV_PATH must be a string.")
     
@@ -139,7 +139,7 @@ def should_skip_date(collection_date: datetime.date, cut_off_date: datetime.date
     """
 
     if cut_off_date is None:
-        cut_off_date = datetime.now().date()
+        cut_off_date = datetime.datetime.now().date()
     if not isinstance(collection_date, datetime.date):
         raise TypeError("collection_date must be a datetime.date object")
     if not isinstance(cut_off_date, datetime.date):
@@ -186,7 +186,7 @@ async def upload_single_sequence(seq_data, seq_id, collection_date, seq_count, t
             f"{seq_count}/{total_seq} Processing sequence ID: {seq_id} for date: {collection_date}")
         seq_sorted_data = seq_data.sort_values(by='GPSTime')
 
-        if not seq_sorted_data or seq_sorted_data.empty:
+        if seq_sorted_data is None or seq_sorted_data.empty:
             logger.error(
                 f"Skipping sequence ID: {seq_id} for date: {collection_date} due to empty data")
             return None
@@ -215,14 +215,18 @@ async def upload_single_sequence(seq_data, seq_id, collection_date, seq_count, t
 
         uploaded_result = await upload_images_to_geovisio(seq_sorted_data, collection_id)
 
-        if uploaded_result:
-            logger.info(
-                f"Successfully uploaded sequence ID: {seq_id} for date: {collection_date}")
+        if uploaded_result and uploaded_result.get("successful", 0) > 0:
+            successful = uploaded_result["successful"]
+            failed = uploaded_result["failed"]
+            logger.info(f"Successfully uploaded sequence ID: {seq_id} for date: {collection_date}")
+            logger.info(f"Upload result: {successful} successful, {failed} failed")
         else:
-            logger.error(
-                f"Failed to upload sequence ID: {seq_id} for date: {collection_date}")
+            logger.error(f"Failed to upload sequence ID: {seq_id} for date: {collection_date}")
+            if uploaded_result:
+                logger.error(f"Upload result: {uploaded_result}")
 
         return collection_id
+
     except TypeError as e:
         logger.error(
             f"Error processing sequence ID: {seq_id} for date: {collection_date}: {e}")
@@ -258,7 +262,7 @@ async def upload_date_group(collection_date, group_data):
     """
     logger.info(f"Processing data for date: {collection_date}")
 
-    if should_skip_date(collection_date):
+    if should_skip_date(collection_date, datetime.date(2025, 6,1)):
 
         logger.info(
             f"Skipping processing for {collection_date}")
@@ -403,7 +407,7 @@ async def main():
     try:
         validate_env()
 
-        csv_path = Path(CSV_PATH)
+        csv_path = Path(CSV_FILE_PATH)
         if not csv_path.exists():
             raise FileNotFoundError(f"The file {csv_path} does not exist.")
 

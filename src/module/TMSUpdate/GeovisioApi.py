@@ -239,11 +239,15 @@ async def create_collection(title, description, keywords, bbox=None, start_time=
     return None
 
 
+# 正確的寫法
 @retry(
-    stop=stop_after_attempt(5),
-    wait=wait_fixed(5),
-    retry=retry_if_exception_type(
-        aiohttp.ClientError, asyncio.TimeoutError, FileNotFoundError),
+    stop=stop_after_attempt(3),
+    wait=wait_fixed(2),
+    retry=retry_if_exception_type((
+        aiohttp.ClientError, 
+        asyncio.TimeoutError, 
+        FileNotFoundError
+    )),  # 將多個異常類型放在元組中
     retry_error_callback=log_retry_error
 )
 # 上傳圖片集合
@@ -434,7 +438,7 @@ async def safe_upload_image(session, semaphore, collection_id, keyname, gps_time
     async with semaphore:
         try:
             result = await upload_image_to_collection(session, collection_id, keyname, gps_time, gps_x, gps_y, speed, img_url, seq)
-            return result
+            return True if result else False
 
         except Exception as e:
             logger.error(
@@ -505,14 +509,20 @@ async def upload_images_to_geovisio(df, collection_id):
         try:
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            sucessful_uploads = sum(1 for r in results if r is True)
-            failed = len(results) - sucessful_uploads
+            successful_uploads = sum(1 for r in results if r is True)
+            failed = len(results) - successful_uploads
 
             logger.info(
-                f"Successfully uploaded {sucessful_uploads} images, {failed} failed.")
+                f"Successfully uploaded {successful_uploads} images, {failed} failed.")
+            return{
+                "successful": successful_uploads,
+                "failed": failed,
+                "total": len(results)
+            }
 
         except Exception as e:
             logger.error(f"An error occurred while uploading images: {e}")
+            return {"successful": 0, "failed": len(tasks), "total": len(tasks)}
 
 
 if __name__ == "__main__":
