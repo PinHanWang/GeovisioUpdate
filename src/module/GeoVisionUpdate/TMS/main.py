@@ -137,6 +137,8 @@ def should_skip_date(collection_date: datetime.date, cut_off_date: datetime.date
         如果 collection_date 或 cut_off_date 不是 datetime.date 物件。
     """
 
+    if cut_off_date is None:
+        cut_off_date = datetime.now().date()
     if not isinstance(collection_date, datetime.date):
         raise TypeError("collection_date must be a datetime.date object")
     if not isinstance(cut_off_date, datetime.date):
@@ -255,9 +257,10 @@ async def upload_date_group(collection_date, group_data):
     """
     logger.info(f"Processing data for date: {collection_date}")
 
-    if should_skip_date(collection_date, datetime.date(2023, 9, 17)):
+    if should_skip_date(collection_date):
+
         logger.info(
-            f"Skipping processing for {collection_date} (before 2023-09-17)")
+            f"Skipping processing for {collection_date}")
         return
 
     if not isinstance(group_data, pd.DataFrame):
@@ -406,16 +409,18 @@ async def main():
         logger.info(f"Processing CSV file: {csv_path}")
 
         logger.info("Starting data preprocessing...")
-
-        prcocessed_data = data_preprocessing(
+        
+        # If processing sidewalk markline data, set time threshold to 300 seconds and distance threshold to 20 meters
+        # If processing 10 M width road data, set time threshold to 500 seconds and distance threshold to 200 meters
+        processed_data = data_preprocessing(
             csv_path, time_threshold=500, distance_threshold=200.0)
 
-        if prcocessed_data.empty:
+        if processed_data.empty:
             logger.warning("No data to process.")
             return
 
 
-        grouped_data = group_by_date(prcocessed_data)
+        grouped_data = group_by_date(processed_data)
         num_dates = len(grouped_data)
 
         logger.info(
@@ -441,14 +446,14 @@ async def main():
                 logger.error(f"Error processing date {collection_date}: {e}")
                 date_results.append({
                     "date": collection_date,
-                    "sequences_processed": 0,
-                    "sequences_total": 0,
+                    "successful_seq": 0,
+                    "total_seq": 0,
+                    "failed_seq": 0,
                     "error": str(e)
                 })
 
         # 生成最終統計報告
-        total_sequences_processed = sum(
-            r.get("sequences_processed", 0) for r in date_results)
+        total_sequences_processed = sum(r.get("successful_seq", 0) for r in date_results) 
         total_sequences = sum(r.get("total_seq", 0) for r in date_results)
 
 
