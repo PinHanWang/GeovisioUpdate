@@ -29,6 +29,14 @@ logger.info(f"TMS_GEOVISIO_URL: {TMS_GEOVISIO_URL}")
 logger.info(f"IMAGE_BASE_PATH: {IMAGE_BASE_PATH}")
 
 
+class ImageAlreadyExistsError(Exception):
+    """圖片已存在的異常，不應重試"""
+    pass
+
+class RetryableUploadError(Exception):
+    """可重試的上傳異常"""
+    pass
+
 # 設定重試策略
 def log_retry_error(retry_state):
     """
@@ -60,6 +68,10 @@ def log_retry_error(retry_state):
     error_msg = str(retry_state.outcome.exception(
     )) if retry_state.outcome and retry_state.outcome.exception() else "Unknown error"
 
+    if "409" in error_msg or "already exist" in error_msg.lower() or isinstance(retry_state.outcome.exception(), ImageAlreadyExistsError):
+        logger.info(f"Image {keyname} already exists in collection {collection_id}, treating as success")
+        return
+    
     logger.error(
         f"Upload permanently failed after retries: {keyname} in collection {collection_id}, Error: {error_msg}")
 
@@ -244,7 +256,7 @@ async def create_collection(title, description, keywords, bbox=None, start_time=
     stop=stop_after_attempt(3),
     wait=wait_fixed(2),
     retry=retry_if_exception_type((
-        aiohttp.ClientError, 
+        RetryableUploadError, 
         asyncio.TimeoutError, 
         FileNotFoundError
     )),  # 將多個異常類型放在元組中
@@ -378,26 +390,41 @@ async def upload_image_to_collection(session, collection_id, keyname, gps_time, 
             if post_response.status in [200, 201, 202]:
                 logger.info(f"Successfully uploaded item: {keyname}")
                 return True
+            elif post_response.status == 409:
+                # 409 表示圖片已存在，視為成功
+                error_text = await post_response.text()
+                logger.warning(f"Image {keyname} already exists at position {seq} (409), treating as success")
+                # 拋出特殊異常，不會被重試
+                raise ImageAlreadyExistsError(f"Image already exists: {error_text}")
+            
             else:
                 error_text = await post_response.text()
                 error_msg = f"Failed to upload item {keyname}: {post_response.status} - {error_text}"
                 logger.warning(error_msg)
-                raise aiohttp.ClientError(error_msg)
+                raise RetryableUploadError(error_msg)
 
+    except ImageAlreadyExistsError:
+        # 409 錯誤，不重試，直接返回成功
+        return True
+    
     except (asyncio.TimeoutError, asyncio.CancelledError) as e:
         logger.error(
             f"Timeout / Cancellation when fetching image from {image_path}: {e}")
         raise
+    
+    except FileNotFoundError:
+        # 檔案不存在，不重試
+        raise
 
     except Exception as e:
         logger.error(f"Exception uploading item {keyname}: {e}")
-        raise
+        raise RetryableUploadError(str(e))
 
     finally:
-        if 'image_data' in locals():
+        if 'image_data' in locals() and image_data is not None: 
             image_data.close()
 
-    await asyncio.sleep(1)
+    # await asyncio.sleep(1)
 
 # 上傳圖片
 

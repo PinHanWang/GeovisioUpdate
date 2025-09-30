@@ -262,7 +262,7 @@ async def upload_date_group(collection_date, group_data):
     """
     logger.info(f"Processing data for date: {collection_date}")
 
-    if should_skip_date(collection_date, datetime.date(2025, 6,1)):
+    if should_skip_date(collection_date, datetime.date(2025, 8,9)):
 
         logger.info(
             f"Skipping processing for {collection_date}")
