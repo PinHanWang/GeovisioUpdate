@@ -3,9 +3,9 @@ from datetime import date
 
 import pandas as pd
 
-import src.module.GeoVisionUpdate.TWCCUpdate.makeExif as makeExif
-import src.module.GeoVisionUpdate.TWCCUpdate.makeScreenshot as makeScreenshot
-import src.module.GeoVisionUpdate.TWCCUpdate.useGeoVisioApi as useGeoVisioApi
+import makeExif as makeExif
+import makeScreenshot as makeScreenshot
+import useGeoVisioApi as useGeoVisioApi
 
 def getExifDf(videoPath: Path, columns: list[str], startSec: int = None, endSec: int = None) -> pd.DataFrame:
     """
@@ -137,17 +137,15 @@ if __name__ == '__main__':
         20250319114434_000030A(這部到01:15)
     """
     
-    SOURCE = Path(r"C:\Users\TMS-24003\Downloads\Archive")
+    SOURCE = Path(r"H:\DCIM\Movie\AIROAD\Nangang")
 
     # Step1: 手動定義上傳路線(相關資訊妤玲會給)
     startSec = None  # 01:30 = 90秒(如果沒寫開始時間可以不用給)
     endSec = None  # 01:15 = 75秒(如果沒寫結束時間可以不用給)
     videos = [
-        "20250915135113_000033A",
-        "20250915135613_000034A",
-        "20250915142613_000040A",
-        "20250915143613_000042A",
-        "20250915144113_000043A"
+        "20251015105509_000016A",
+        "20251015110009_000017A",
+        "20251015110509_000018A",
     ]  # 影片要照順序
 
 
