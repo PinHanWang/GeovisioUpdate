@@ -6,6 +6,7 @@ import os
 import sys
 import numpy as np
 import pandas as pd
+import makeExif
 # import make
 # sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 # from src.module.utlis import makeExif # import同目錄下的exif.py
@@ -179,8 +180,8 @@ if __name__ == '__main__':
     #         saveResultCsv(labelPath, df)
     #     else:
     #         print(f"{labelPath.stem} skip")
-    exif_folder  = Path(r"output\exif\0703")
-    label_folder = Path(r"output\prediction\0703")
+    exif_folder  = Path(r"E:\10月AIROAD更新\exif")
+    label_folder = Path(r"E:\10月AIROAD更新\辨識結果")
     exif_files = exif_folder.glob("2025*A.csv")  # 儲存 labels 的檔案
 
     for exif_file in exif_files:
@@ -190,21 +191,21 @@ if __name__ == '__main__':
             continue
 
         # get exif imformation
-        # video_path = (label_folder / f"{exif_file.stem}.MP4")
-        # exifDf = makeExif.makeExifDf(video_path)
-        # if len(exifDf):
-        #     print(f"{exif_file.stem} do")
-        #     # make result_*.csv
-        #     df = makeResultDf(label_path, exifDf)
-        #     saveResultCsv(label_path, df)
-        # else:
-        #     print(f"{exif_file.stem} skip")
+        video_path = (label_folder / f"{exif_file.stem}.MP4")
+        exifDf = makeExif.makeExifDf(video_path)
+        if len(exifDf):
+            print(f"{exif_file.stem} do")
+            # make result_*.csv
+            df = makeResultDf(label_path, exifDf)
+            saveResultCsv(label_path, df)
+        else:
+            print(f"{exif_file.stem} skip")
 
-        exif_Df = pd.read_csv(str(exif_file))
+        # exif_Df = pd.read_csv(str(exif_file))
         # print(exif_Df)
     
-        df = makeResultDf(label_path, exif_Df)
-        saveResultCsv(label_path, df)
+        # df = makeResultDf(label_path, exif_Df)
+        # saveResultCsv(label_path, df)
 
         # df = makeResultDf(label_path, exif_Df)
         # saveResultCsv(label_path, df)
