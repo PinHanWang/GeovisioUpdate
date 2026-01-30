@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # 環境變數
-DEV_TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
+TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
 CSV_FILE_PATH = os.getenv("CSV_FILE_PATH")
 SEQUENCE_DELAY = int(os.getenv("SEQUENCE_DELAY", "3"))
 BATCH_DELAY = int(os.getenv("BATCH_DELAY", "300"))

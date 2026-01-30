@@ -106,7 +106,7 @@ def data_preprocessing(csv_path: Path, time_threshold: int = 300, distance_thres
     if not csv_path.exists():
         logger.error(f"The file {csv_path} does not exist.")
         raise FileNotFoundError(f"The file {csv_path} does not exist.")
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path, encoding='cp950', encoding_errors='replace')
 
     # Drop duplicate rows based on 'KeyName'
     df_unique = df.drop_duplicates(subset=['KeyName'], keep='first')
