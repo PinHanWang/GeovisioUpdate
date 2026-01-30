@@ -249,7 +249,8 @@ async def create_collection(title, description, keywords, bbox=None, start_time=
         "extent": extent
     }
 
-    async with aiohttp.ClientSession() as session:
+    headers = {"Accept-Encoding": "gzip, deflate, identity"}
+    async with aiohttp.ClientSession(headers=headers) as session:
         try:
             async with session.post(url, json=payload) as response:
                 if response.status in [200, 201]:
@@ -526,7 +527,8 @@ async def upload_images_to_geovisio(df, collection_id):
     total_successful = 0
     total_failed = 0
     
-    async with aiohttp.ClientSession(timeout=timeout) as session:
+    headers = {"Accept-Encoding": "gzip, deflate, identity"}
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
         for batch_num, batch_df in enumerate(batches, 1):
             logger.info(f"📦 處理批次 {batch_num}/{len(batches)}")
             
