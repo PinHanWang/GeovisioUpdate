@@ -7,23 +7,37 @@ import logging.config
 from pathlib import Path
 from typing import Dict, Any, Optional
 import pandas as pd
+from src.module.TMSUpdate.csv_encoding_converter import convert_csv_encoding
 from dotenv import load_dotenv
 
 # 導入自定義模組
-from DataPreprocessing import data_preprocessing
-from GeovisioApi import create_collection, upload_images_to_geovisio, get_all_collections
-from failures import upload_failures, collection_failures
-from logger import LOGGING_CONFIG
+from src.module.TMSUpdate.image_data_preprocessor import data_preprocessing
+from src.module.TMSUpdate.geovisio_api_client import create_collection, upload_images_to_geovisio, get_all_collections
+from src.module.TMSUpdate.failure_checker import upload_failures, collection_failures
+from src.module.TMSUpdate.logging_config import LOGGING_CONFIG
+
+# ========================================
+# 導入新的功能模組
+# ========================================
+from src.module.TMSUpdate.duplicate_checker import dedup_checker
+from resource_monitor import simple_resource_monitor
+from src.module.TMSUpdate.sequence_batch_handler import large_seq_handler
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
 load_dotenv()
+
+# 環境變數
 TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
 CSV_FILE_PATH = os.getenv("CSV_FILE_PATH")
 SEQUENCE_DELAY = int(os.getenv("SEQUENCE_DELAY", "3"))
 BATCH_DELAY = int(os.getenv("BATCH_DELAY", "300"))
 VEHICLE_TYPE = os.getenv("VEHICLE_TYPE", "CAR")
+
+# 功能開關
+ENABLE_DEDUPLICATION = os.getenv("ENABLE_DEDUPLICATION", "true").lower() == "true"
+ENABLE_RESOURCE_MONITOR = os.getenv("ENABLE_RESOURCE_MONITOR", "true").lower() == "true"
 
 
 def validate_env() -> None:
@@ -130,7 +144,7 @@ def should_skip_date(collection_date: datetime.date, cut_off_date: datetime.date
     返回值
     -------
     bool
-        如果應該跳過集合日期則返回 True，否則返回 False。
+        如果應該跳過集合日期則返回 True,否則返回 False。
 
     異常
     ------
@@ -165,14 +179,14 @@ async def upload_single_sequence(seq_data, seq_id, collection_date, seq_count, t
     collection_date : datetime.date
         序列的集合日期。
     seq_count : int
-        序列計數（從 1 開始）。
+        序列計數(從 1 開始)。
     total_seq : int
         總序列數。
 
     返回值
     -------
     str or None
-        如果上傳成功則返回集合 ID，否則返回 None。
+        如果上傳成功則返回集合 ID,否則返回 None。
 
     異常
     ------
@@ -213,6 +227,9 @@ async def upload_single_sequence(seq_data, seq_id, collection_date, seq_count, t
             f"Created collection with ID: {collection_id}")
         logger.debug(f"Title: {title}")
 
+        # ========================================
+        # 上傳影像 (已整合資源監控和大型序列處理)
+        # ========================================
         uploaded_result = await upload_images_to_geovisio(seq_sorted_data, collection_id)
 
         if uploaded_result and uploaded_result.get("successful", 0) > 0:
@@ -246,7 +263,7 @@ async def upload_date_group(collection_date, group_data):
     collection_date : datetime.date
         上傳的日期
     group_data : pd.DataFrame
-        上傳的資料（已經過分組）
+        上傳的資料(已經過分組)
 
     返回值
     -------
@@ -262,8 +279,7 @@ async def upload_date_group(collection_date, group_data):
     """
     logger.info(f"Processing data for date: {collection_date}")
 
-    if should_skip_date(collection_date, datetime.date(2025, 6,1)):
-
+    if should_skip_date(collection_date, datetime.date(2025, 6, 1)):
         logger.info(
             f"Skipping processing for {collection_date}")
         return
@@ -298,6 +314,7 @@ async def upload_date_group(collection_date, group_data):
             else:
                 failed_seq += 1
 
+            # Sequence 間延遲
             if count < total_seq:
                 await asyncio.sleep(SEQUENCE_DELAY)
 
@@ -306,6 +323,7 @@ async def upload_date_group(collection_date, group_data):
                 f"Error processing sequence ID: {seq_id} for date: {collection_date}: {e}",
                 exc_info=True
             )
+            failed_seq += 1
 
     result = {
         "date": collection_date,
@@ -324,7 +342,7 @@ async def save_failure_reports():
     """
     保存上傳過程的失敗報告。
 
-    此函數保存兩種類型的失敗報告：上傳失敗和集合失敗。
+    此函數保存兩種類型的失敗報告:上傳失敗和集合失敗。
     上傳失敗會保存在名為 `<時間戳>_upload_failures.csv` 的 CSV 檔案中。
     集合失敗會保存在名為 `<時間戳>_failed_collections.csv` 的 CSV 檔案中。
     此函數還會在日誌記錄器中記錄失敗情況。
@@ -385,11 +403,10 @@ async def save_failure_reports():
 
 
 async def main():
-
     """
     腳本的主要入口點。
 
-    此函數處理環境變數 CSV_PATH 中指定的 CSV 檔案，對資料進行前處理，
+    此函數處理環境變數 CSV_PATH 中指定的 CSV 檔案,對資料進行前處理,
     並使用 API 將資料上傳到 GeoVision。
 
     此函數會記錄處理進度並將結果保存到 CSV 檔案中。
@@ -404,10 +421,29 @@ async def main():
     """
     start_time = time.time()
 
+    # ========================================
+    # 初始化新功能模組
+    # ========================================
+    try:
+        # 初始化去重檢查器
+        if ENABLE_DEDUPLICATION:
+            await dedup_checker.initialize()
+            logger.info("✅ 去重檢查器初始化完成")
+        
+        # 初始化資源監控器
+        if ENABLE_RESOURCE_MONITOR:
+            await simple_resource_monitor.initialize()
+            logger.info("✅ 資源監控器初始化完成")
+
+    except Exception as e:
+        logger.error(f"❌ 模組初始化失敗: {e}")
+        logger.warning("⚠️  將繼續執行,但相關功能將被停用")
+
     try:
         validate_env()
 
         csv_path = Path(CSV_FILE_PATH)
+        convert_csv_encoding(csv_path, backup=False)
         if not csv_path.exists():
             raise FileNotFoundError(f"The file {csv_path} does not exist.")
 
@@ -419,20 +455,18 @@ async def main():
         # If processing 10 M width road data, set time threshold to 500 seconds and distance threshold to 200 meters
         if VEHICLE_TYPE == "CAR":
             processed_data = data_preprocessing(csv_path, time_threshold=500, distance_threshold=200.0)
-        elif VEHICLE_TYPE =='MOTORCYCLE':
+        elif VEHICLE_TYPE == 'MOTORCYCLE':
             processed_data = data_preprocessing(csv_path, time_threshold=300, distance_threshold=20.0)
 
         if processed_data.empty:
             logger.warning("No data to process.")
             return
 
-
         grouped_data = group_by_date(processed_data)
         num_dates = len(grouped_data)
 
         logger.info(
             f"Total number of unique dates in the dataset: {num_dates}")
-
 
         date_results = []
         for date_count, (collection_date, group) in enumerate(grouped_data, 1):
@@ -459,20 +493,27 @@ async def main():
                     "error": str(e)
                 })
 
+        # ========================================
         # 生成最終統計報告
+        # ========================================
         total_sequences_processed = sum(r.get("successful_seq", 0) for r in date_results) 
         total_sequences = sum(r.get("total_seq", 0) for r in date_results)
 
-
-        logger.info("=" * 50)
+        logger.info("=" * 60)
         logger.info("FINAL PROCESSING SUMMARY")
-        logger.info("=" * 50)
+        logger.info("=" * 60)
         logger.info(
             f"Total dates processed: {len([r for r in date_results if not r.get('skipped', False)])}")
         logger.info(
             f"Total sequences processed: {total_sequences_processed}/{total_sequences}")
         logger.info(f"Upload failures: {len(upload_failures)}")
         logger.info(f"Collection failures: {len(collection_failures)}")
+
+        # ========================================
+        # 顯示去重統計
+        # ========================================
+        if ENABLE_DEDUPLICATION:
+            dedup_checker.print_stats()
 
         # 保存失敗報告
         await save_failure_reports()
@@ -491,10 +532,64 @@ async def main():
         logger.error(f"Fatal error in main process: {e}")
         raise
 
+    finally:
+        # ========================================
+        # 關閉所有模組
+        # ========================================
+        try:
+            if ENABLE_DEDUPLICATION:
+                await dedup_checker.close()
+                logger.info("✅ 去重檢查器已關閉")
+            
+            if ENABLE_RESOURCE_MONITOR:
+                await simple_resource_monitor.close()
+                logger.info("✅ 資源監控器已關閉")
+        
+        except Exception as e:
+            logger.error(f"❌ 模組關閉時發生錯誤: {e}")
+
+
+
+
+class GeoVisioUploadPipeline:
+    """GeoVisio 上傳流程管理器"""
+    
+    def __init__(self):
+        """初始化流程管理器"""
+        pass
+    
+    async def initialize_modules(self):
+        """初始化各模組"""
+        pass
+    
+    async def process_csv_file(self, csv_path: Path) -> pd.DataFrame:
+        """處理 CSV 檔案"""
+        pass
+    
+    async def upload_single_sequence(self, seq_data, seq_id, date) -> str:
+        """上傳單個序列"""
+        pass
+    
+    async def upload_date_group(self, date, group_data) -> dict:
+        """上傳單日資料"""
+        pass
+    
+    async def run(self):
+        """執行完整流程"""
+        pass
+    
+    async def cleanup(self):
+        """清理資源"""
+        pass
+
+
+async def main():
+    """主程式入口"""
+    pipeline = GeoVisioUploadPipeline()
+    try:
+        await pipeline.run()
+    finally:
+        await pipeline.cleanup()
+
 if __name__ == "__main__":
     asyncio.run(main())
-
-    # Uncomment the following lines to run the other functions
-    # create_collection()
-    # upload_images_to_geovisio()
-    # get_all_collections()

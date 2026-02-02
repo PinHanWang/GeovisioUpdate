@@ -9,17 +9,17 @@ import aiohttp
 import aiofiles
 from aiohttp import ClientTimeout
 import asyncio
-from failures import upload_failures, collection_failures
+from src.module.TMSUpdate.failure_checker import upload_failures, collection_failures
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type, RetryError
 import logging.config
-from logger import LOGGING_CONFIG
+from src.module.TMSUpdate.logging_config import LOGGING_CONFIG
 
 # ========================================
 # 導入新的功能模組
 # ========================================
-from deduplication import dedup_checker
+from src.module.TMSUpdate.duplicate_checker import dedup_checker
 from resource_monitor import simple_resource_monitor
-from large_sequence_handler import large_seq_handler
+from src.module.TMSUpdate.sequence_batch_handler import large_seq_handler
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -619,6 +619,54 @@ async def upload_images_to_geovisio(df, collection_id):
         "failed": total_failed,
         "total": total_successful + total_failed
     }
+
+
+
+class GeoVisioAPIClient:
+    """GeoVisio API 客戶端"""
+    
+    def __init__(self, base_url: str):
+        """初始化 API 客戶端"""
+        pass
+    
+    # Collection 管理
+    async def get_all_collections(self) -> dict:
+        """取得所有 Collection"""
+        pass
+    
+    async def get_collection_by_id(self, collection_id: str) -> dict:
+        """取得指定 Collection"""
+        pass
+    
+    async def create_collection(self, title, description, keywords, **kwargs) -> str:
+        """創建 Collection"""
+        pass
+    
+    # 影像上傳
+    async def upload_image(self, collection_id, image_info: dict) -> bool:
+        """上傳單張影像"""
+        pass
+    
+    async def batch_upload_images(self, collection_id, images: List[dict]) -> dict:
+        """批次上傳影像"""
+        pass
+
+
+class ImageUploader:
+    """影像上傳管理器"""
+    
+    def __init__(self, api_client: GeoVisioAPIClient, 
+                 dedup_checker, resource_monitor, seq_handler):
+        """初始化上傳器"""
+        pass
+    
+    async def upload_with_retry(self, **kwargs) -> bool:
+        """帶重試的上傳"""
+        pass
+    
+    async def upload_sequence(self, df: pd.DataFrame, collection_id: str) -> dict:
+        """上傳完整序列"""
+        pass
 
 
 if __name__ == "__main__":

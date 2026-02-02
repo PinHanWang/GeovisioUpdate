@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-class SimpleResourceMonitor:
+class ResourceMonitor:
     """
     簡化版資源監控器
     

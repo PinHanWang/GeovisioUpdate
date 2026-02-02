@@ -1,10 +1,17 @@
-# src/module/TMSUpdate/deduplication_fixed.py
 """
-修正後的去重檢查模組
-支援:
-1. KeyName 檢查 (資料庫)
-2. MD5 檢查 (資料庫)
-3. URL 下載計算 MD5 (當本地檔案不存在時)
+去重檢查模組 (重構優化版)
+
+功能:
+1. KeyName 檢查 (基於 metadata->>'originalFileName')
+2. MD5 檢查 (基於 original_content_md5)
+3. 支援本地檔案和遠端 URL 的 MD5 計算
+4. 快取機制提升性能
+
+優化重點:
+- 統一中文日誌訊息
+- 清楚的日誌等級分類
+- 移除過多的 emoji
+- 完善的 docstring
 """
 
 import hashlib
@@ -16,26 +23,41 @@ import aiohttp
 import asyncpg
 from dotenv import load_dotenv
 
+# 取得日誌器
 logger = logging.getLogger(__name__)
 
+# 載入環境變數
 load_dotenv()
 IMAGE_BASE_PATH = os.getenv("IMAGE_BASE_PATH")
 
 
-class DeduplicationChecker:
-    """去重檢查器 - 支援本地檔案和遠端 URL"""
+class DuplicateChecker:
+    """
+    去重檢查器
+    
+    支援兩種去重方式:
+    1. KeyName 檢查 (快速,基於檔名)
+    2. MD5 檢查 (精確,基於檔案內容)
+    
+    Attributes:
+        db_url: 資料庫連線字串
+        db_pool: 資料庫連線池
+        md5_cache: MD5 快取 (Set)
+        keyname_cache: KeyName 快取 (Set)
+        stats: 統計資訊
+    """
     
     def __init__(self, db_url: Optional[str] = None):
         """
         初始化去重檢查器
         
         Args:
-            db_url: PostgreSQL 連線字串
+            db_url: PostgreSQL 連線字串 (預設從環境變數讀取)
         """
         self.db_url = db_url or os.getenv("DATABASE_URL")
         self.db_pool = None
         
-        # 本地快取
+        # 快取
         self.md5_cache: Set[str] = set()
         self.keyname_cache: Set[str] = set()
         
@@ -50,33 +72,41 @@ class DeduplicationChecker:
         }
     
     async def initialize(self):
-        """初始化資料庫連線池"""
-        if self.db_url:
-            try:
-                self.db_pool = await asyncpg.create_pool(
-                    self.db_url,
-                    min_size=2,
-                    max_size=5,
-                    timeout=30
-                )
-                logger.info("✅ 去重檢查器初始化成功")
-                
-                # 載入現有的 KeyName 到快取
-                await self._load_existing_keynames()
-                
-            except Exception as e:
-                logger.warning(f"⚠️  無法連線到資料庫,去重功能將被停用: {e}")
-                self.db_pool = None
-        else:
-            logger.warning("⚠️  未提供資料庫連線,去重功能將被停用")
+        """
+        初始化資料庫連線池並載入快取
+        
+        Raises:
+            Exception: 資料庫連線失敗
+        """
+        if not self.db_url:
+            logger.warning("去重檢查 - 未提供資料庫連線,功能將被停用")
+            return
+        
+        try:
+            # 建立連線池
+            self.db_pool = await asyncpg.create_pool(
+                self.db_url,
+                min_size=2,
+                max_size=5,
+                timeout=30
+            )
+            logger.info("去重檢查 - 資料庫連線池建立成功")
+            
+            # 載入現有的 KeyName 快取
+            await self._load_keyname_cache()
+            
+        except Exception as e:
+            logger.error("去重檢查 - 資料庫連線失敗: %s", str(e))
+            logger.warning("去重檢查 - 功能將被停用")
+            self.db_pool = None
     
     async def close(self):
         """關閉資料庫連線池"""
         if self.db_pool:
             await self.db_pool.close()
-            logger.info("✅ 去重檢查器已關閉")
+            logger.info("去重檢查 - 資料庫連線池已關閉")
     
-    async def _load_existing_keynames(self, limit: int = 50000):
+    async def _load_keyname_cache(self, limit: int = 50000):
         """
         載入現有的 KeyName 到快取
         
@@ -88,8 +118,7 @@ class DeduplicationChecker:
         
         try:
             async with self.db_pool.acquire() as conn:
-                # 載入最近的 originalFileName
-                # 使用子查詢來處理 DISTINCT + ORDER BY
+                # 查詢最近的 originalFileName (使用子查詢處理 DISTINCT + ORDER BY)
                 records = await conn.fetch(
                     """
                     SELECT DISTINCT filename
@@ -107,12 +136,13 @@ class DeduplicationChecker:
                     limit
                 )
                 
-                # 儲存完整檔名到快取
+                # 儲存到快取
                 self.keyname_cache = {r['filename'] for r in records if r['filename']}
-                logger.info(f"📦 載入 {len(self.keyname_cache)} 個檔名到快取")
+                
+                logger.info("去重檢查 - 快取載入完成,檔名數量: %d", len(self.keyname_cache))
                 
         except Exception as e:
-            logger.error(f"❌ 載入檔名快取失敗: {e}")
+            logger.error("去重檢查 - 快取載入失敗: %s", str(e))
     
     @staticmethod
     def calculate_md5_from_bytes(data: bytes) -> str:
@@ -123,7 +153,7 @@ class DeduplicationChecker:
             data: 檔案內容
             
         Returns:
-            MD5 字串
+            MD5 字串 (32 字元 hex)
         """
         return hashlib.md5(data).hexdigest()
     
@@ -136,7 +166,11 @@ class DeduplicationChecker:
             file_path: 檔案路徑
             
         Returns:
-            MD5 字串
+            MD5 字串 (32 字元 hex)
+            
+        Raises:
+            FileNotFoundError: 檔案不存在
+            IOError: 檔案讀取失敗
         """
         md5_hash = hashlib.md5()
         
@@ -156,7 +190,7 @@ class DeduplicationChecker:
         
         Args:
             url: 影像 URL
-            session: 可選的 aiohttp session
+            session: 可選的 aiohttp session (重用連線)
             
         Returns:
             MD5 字串,失敗時返回 None
@@ -168,18 +202,21 @@ class DeduplicationChecker:
                 session = aiohttp.ClientSession()
                 close_session = True
             
+            # 下載檔案
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                 if resp.status == 200:
                     data = await resp.read()
                     md5 = self.calculate_md5_from_bytes(data)
-                    logger.debug(f"✅ 從 URL 計算 MD5: {md5[:8]}... (大小: {len(data)} bytes)")
+                    logger.debug("MD5 計算 - 來源: URL, MD5: %s..., 大小: %d bytes", 
+                               md5[:8], len(data))
                     return md5
                 else:
-                    logger.error(f"❌ 無法下載 URL: {url} (HTTP {resp.status})")
+                    logger.error("MD5 計算 - URL 下載失敗,狀態碼: %d, URL: %s", 
+                               resp.status, url)
                     return None
         
         except Exception as e:
-            logger.error(f"❌ 從 URL 計算 MD5 失敗: {e}")
+            logger.error("MD5 計算 - 從 URL 計算失敗: %s", str(e))
             return None
         
         finally:
@@ -191,7 +228,7 @@ class DeduplicationChecker:
         檢查 MD5 是否已存在
         
         Args:
-            md5: MD5 字串
+            md5: MD5 字串 (32 字元 hex)
             
         Returns:
             是否已存在
@@ -199,12 +236,13 @@ class DeduplicationChecker:
         if not md5:
             return False
         
-        # 1. 先檢查快取
+        # 1. 快取檢查
         if md5 in self.md5_cache:
             self.stats['cache_hits'] += 1
+            logger.debug("去重檢查 - MD5 快取命中: %s...", md5[:8])
             return True
         
-        # 2. 查詢資料庫
+        # 2. 資料庫檢查
         if not self.db_pool:
             return False
         
@@ -223,17 +261,19 @@ class DeduplicationChecker:
                 if exists:
                     # 加入快取
                     self.md5_cache.add(md5)
+                    logger.debug("去重檢查 - MD5 資料庫命中: %s...", md5[:8])
                     return True
                 
+                logger.debug("去重檢查 - MD5 不存在: %s...", md5[:8])
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ 檢查 MD5 時發生錯誤: {e}")
+            logger.error("去重檢查 - MD5 查詢失敗: %s", str(e))
             return False
     
     async def check_keyname_exists(self, keyname: str) -> bool:
         """
-        檢查 keyname 是否已存在
+        檢查 KeyName 是否已存在
         
         Args:
             keyname: 檔案名稱 (不含副檔名,例如: 20250618093828079_S9D3DPLAR)
@@ -247,13 +287,13 @@ class DeduplicationChecker:
         # 加上 .jpg 副檔名
         filename = f"{keyname}.jpg"
         
-        # 1. 先檢查快取
+        # 1. 快取檢查
         if filename in self.keyname_cache:
             self.stats['cache_hits'] += 1
-            logger.debug(f"🎯 檔名快取命中: {filename}")
+            logger.debug("去重檢查 - KeyName 快取命中: %s", filename)
             return True
         
-        # 2. 查詢資料庫
+        # 2. 資料庫檢查
         if not self.db_pool:
             return False
         
@@ -272,14 +312,14 @@ class DeduplicationChecker:
                 if exists:
                     # 加入快取
                     self.keyname_cache.add(filename)
-                    logger.debug(f"🎯 檔名資料庫命中: {filename}")
+                    logger.debug("去重檢查 - KeyName 資料庫命中: %s", filename)
                     return True
                 
-                logger.debug(f"✨ 檔名不存在: {filename}")
+                logger.debug("去重檢查 - KeyName 不存在: %s", filename)
                 return False
                 
         except Exception as e:
-            logger.error(f"❌ 檢查 keyname 時發生錯誤: {e}")
+            logger.error("去重檢查 - KeyName 查詢失敗: %s", str(e))
             return False
     
     async def should_skip_upload(
@@ -292,8 +332,12 @@ class DeduplicationChecker:
         """
         判斷是否應該跳過上傳
         
+        檢查流程:
+        1. 檢查 KeyName (最快)
+        2. 檢查 MD5 (可選,較慢但更準確)
+        
         Args:
-            keyname: 檔案名稱 (不含副檔名,例如: 20250618093828079_S9D3DPLAR)
+            keyname: 檔案名稱 (不含副檔名)
             img_url: 影像 URL (用於下載計算 MD5)
             check_md5: 是否檢查 MD5
             session: 可選的 aiohttp session
@@ -304,19 +348,21 @@ class DeduplicationChecker:
         self.stats['checked'] += 1
         
         # ========================================
-        # 1. 檢查 originalFileName (最快,優先)
+        # 1. KeyName 檢查 (優先,最快)
         # ========================================
         if await self.check_keyname_exists(keyname):
             self.stats['duplicates_keyname'] += 1
-            return (True, f"檔名已存在: {keyname}.jpg")
+            reason = f"檔名重複: {keyname}.jpg"
+            logger.info("去重檢查 - 跳過上傳: %s", reason)
+            return (True, reason)
         
         # ========================================
-        # 2. 檢查 MD5 (可選)
+        # 2. MD5 檢查 (可選)
         # ========================================
         if check_md5:
             md5 = None
             
-            # 2.1 嘗試從本地檔案計算 MD5
+            # 2.1 嘗試從本地檔案計算
             if IMAGE_BASE_PATH:
                 image_path = os.path.join(IMAGE_BASE_PATH, f"{keyname}.jpg")
                 
@@ -324,13 +370,14 @@ class DeduplicationChecker:
                     try:
                         md5 = self.calculate_md5_from_file(image_path)
                         self.stats['md5_calculated'] += 1
-                        logger.debug(f"📁 從本地檔案計算 MD5: {keyname}")
+                        logger.debug("MD5 計算 - 來源: 本地檔案, KeyName: %s", keyname)
                     except Exception as e:
-                        logger.error(f"❌ 計算本地檔案 MD5 失敗 ({keyname}): {e}")
+                        logger.error("MD5 計算 - 本地檔案失敗,KeyName: %s, 錯誤: %s", 
+                                   keyname, str(e))
             
-            # 2.2 如果本地檔案不存在,嘗試從 URL 下載計算
+            # 2.2 嘗試從 URL 下載計算
             if md5 is None and img_url:
-                logger.debug(f"🌐 嘗試從 URL 計算 MD5: {keyname}")
+                logger.debug("MD5 計算 - 嘗試從 URL,KeyName: %s", keyname)
                 md5 = await self.calculate_md5_from_url(img_url, session)
                 
                 if md5:
@@ -340,19 +387,27 @@ class DeduplicationChecker:
             if md5:
                 if await self.check_md5_exists(md5):
                     self.stats['duplicates_md5'] += 1
-                    return (True, f"MD5 重複: {md5[:8]}...")
+                    reason = f"MD5 重複: {md5[:8]}..."
+                    logger.info("去重檢查 - 跳過上傳: %s", reason)
+                    return (True, reason)
             else:
                 # MD5 計算失敗,記錄但不阻止上傳
                 self.stats['md5_skipped'] += 1
-                logger.warning(f"⚠️  無法計算 MD5: {keyname} (但仍會繼續上傳)")
+                logger.warning("去重檢查 - MD5 計算失敗,KeyName: %s (仍會繼續上傳)", keyname)
         
         # ========================================
         # 3. 不重複,可以上傳
         # ========================================
+        logger.debug("去重檢查 - 可上傳: %s", keyname)
         return (False, "可上傳")
     
     def get_stats(self) -> dict:
-        """取得統計資訊"""
+        """
+        取得統計資訊
+        
+        Returns:
+            統計資訊字典
+        """
         return {
             **self.stats,
             'cache_size_md5': len(self.md5_cache),
@@ -360,52 +415,88 @@ class DeduplicationChecker:
         }
     
     def print_stats(self):
-        """列印統計資訊"""
+        """列印統計報告 (格式化表格)"""
         stats = self.get_stats()
-        logger.info("=" * 60)
-        logger.info("📊 去重檢查統計")
-        logger.info("=" * 60)
-        logger.info(f"檢查總數:        {stats['checked']}")
-        logger.info(f"KeyName 重複:    {stats['duplicates_keyname']}")
-        logger.info(f"MD5 重複:        {stats['duplicates_md5']}")
-        logger.info(f"快取命中:        {stats['cache_hits']}")
-        logger.info(f"MD5 已計算:      {stats['md5_calculated']}")
-        logger.info(f"MD5 跳過:        {stats['md5_skipped']}")
-        logger.info(f"快取大小 (MD5):  {stats['cache_size_md5']}")
-        logger.info(f"快取大小 (Key):  {stats['cache_size_keyname']}")
-        logger.info("=" * 60)
+        
+        logger.info("=" * 80)
+        logger.info("去重檢查統計報告")
+        logger.info("=" * 80)
+        logger.info("%-30s: %10d", "檢查總數", stats['checked'])
+        logger.info("%-30s: %10d", "KeyName 重複", stats['duplicates_keyname'])
+        logger.info("%-30s: %10d", "MD5 重複", stats['duplicates_md5'])
+        logger.info("%-30s: %10d", "快取命中", stats['cache_hits'])
+        logger.info("%-30s: %10d", "MD5 已計算", stats['md5_calculated'])
+        logger.info("%-30s: %10d", "MD5 跳過", stats['md5_skipped'])
+        logger.info("=" * 80)
+        logger.info("%-30s: %10d", "MD5 快取大小", stats['cache_size_md5'])
+        logger.info("%-30s: %10d", "KeyName 快取大小", stats['cache_size_keyname'])
+        logger.info("=" * 80)
+    
+    def reset_stats(self):
+        """重置統計資訊"""
+        self.stats = {
+            'checked': 0,
+            'duplicates_md5': 0,
+            'duplicates_keyname': 0,
+            'cache_hits': 0,
+            'md5_calculated': 0,
+            'md5_skipped': 0
+        }
+        logger.info("去重檢查 - 統計資訊已重置")
 
 
-# 全域實例
-dedup_checker = DeduplicationChecker()
+# ========================================
+# 全域實例 (單例模式)
+# ========================================
+_duplicate_checker_instance = None
 
 
+def get_duplicate_checker() -> DuplicateChecker:
+    """
+    取得全域去重檢查器實例
+    
+    Returns:
+        DuplicateChecker 實例
+    """
+    global _duplicate_checker_instance
+    if _duplicate_checker_instance is None:
+        _duplicate_checker_instance = DuplicateChecker()
+    return _duplicate_checker_instance
+
+
+# ========================================
+# 測試程式
+# ========================================
 if __name__ == "__main__":
     import asyncio
+    from logging_config import setup_logging
     
     async def test():
-        checker = DeduplicationChecker()
+        """測試程式"""
+        # 設定日誌
+        setup_logging()
+        
+        # 建立檢查器
+        checker = DuplicateChecker()
         await checker.initialize()
         
         # 測試 1: 檢查 KeyName
         keyname = "20250618093828079_S9D3DPLAR"
         url = "https://roadapp.nat.gov.tw/CCImage/TTU11402/S9CR0PKTG/20250618093828079_S9D3DPLAR.jpg"
         
-        print(f"\n測試 KeyName: {keyname}")
+        logger.info("測試 KeyName: %s", keyname)
         should_skip, reason = await checker.should_skip_upload(
             keyname, 
             img_url=url,
             check_md5=True
         )
         
-        print(f"是否跳過: {should_skip}")
-        print(f"原因: {reason}")
+        logger.info("結果 - 是否跳過: %s, 原因: %s", should_skip, reason)
         
         # 測試 2: 再次檢查 (測試快取)
-        print(f"\n再次測試 (應該使用快取):")
+        logger.info("再次測試 (應該使用快取)")
         should_skip, reason = await checker.should_skip_upload(keyname)
-        print(f"是否跳過: {should_skip}")
-        print(f"原因: {reason}")
+        logger.info("結果 - 是否跳過: %s, 原因: %s", should_skip, reason)
         
         # 顯示統計
         checker.print_stats()

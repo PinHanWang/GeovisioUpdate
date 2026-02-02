@@ -11,7 +11,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-class LargeSequenceHandler:
+class SequenceBatchHandler:
     """大型 Sequence 處理器"""
     
     # Sequence 大小分類閾值
@@ -141,12 +141,12 @@ class LargeSequenceHandler:
 
 
 # 全域實例
-large_seq_handler = LargeSequenceHandler()
+large_seq_handler = SequenceBatchHandler()
 
 
 if __name__ == "__main__":
     # 測試
-    handler = LargeSequenceHandler()
+    handler = SequenceBatchHandler()
     
     # 測試不同大小的 sequence
     test_sizes = [100, 800, 3000, 5000]

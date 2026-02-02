@@ -289,8 +289,4 @@ def convert_csv_encoding(
         轉換成功返回 True
     """
     converter = CSVEncodingConverter(backup=backup)
-<<<<<<< HEAD
     return converter.convert_to_utf8(csv_path)
-=======
-    return converter.convert_to_utf8(csv_path)
->>>>>>> a809647091b7b0a0f46fbbf971c62d19cc5c9b27
