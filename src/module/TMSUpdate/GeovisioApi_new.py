@@ -117,11 +117,16 @@ async def get_all_collections():
             獲取集合時發生錯誤。
     """
     url = f"{TMS_GEOVISIO_URL}/api/collections"
+<<<<<<< HEAD
     connector = aiohttp.TCPConnector(limit=10)
     async with aiohttp.ClientSession(
         connector=connector,
         auto_decompress=False  # 禁用自動解壓縮
     ) as session:
+=======
+    headers = {"Accept-Encoding": "gzip, deflate, identity"}
+    async with aiohttp.ClientSession(headers=headers) as session:
+>>>>>>> a809647091b7b0a0f46fbbf971c62d19cc5c9b27
 
         try:
             logger.info(f"Fetching all collections.")
@@ -173,11 +178,16 @@ async def get_collection_by_items_id(collection_id):
     """
     url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}"
 
+<<<<<<< HEAD
     connector = aiohttp.TCPConnector(limit=10)
     async with aiohttp.ClientSession(
         connector=connector,
         auto_decompress=False  # 禁用自動解壓縮
     ) as session:
+=======
+    headers = {"Accept-Encoding": "gzip, deflate, identity"}
+    async with aiohttp.ClientSession(headers=headers) as session:
+>>>>>>> a809647091b7b0a0f46fbbf971c62d19cc5c9b27
         try:
             logger.info(f"Fetching collection with ID: {collection_id}")
 
@@ -258,6 +268,7 @@ async def create_collection(title, description, keywords, bbox=None, start_time=
     }
 
     # ========================================
+<<<<<<< HEAD
     # 修正 Brotli 解碼問題
     # ========================================
     connector = aiohttp.TCPConnector(limit=10)
@@ -265,6 +276,12 @@ async def create_collection(title, description, keywords, bbox=None, start_time=
         connector=connector,
         auto_decompress=False  # 禁用自動解壓縮,避免 Brotli 錯誤
     ) as session:
+=======
+    # 修正 Brotli 解碼問題 - 使用 headers 指定接受的編碼
+    # ========================================
+    headers = {"Accept-Encoding": "gzip, deflate, identity"}
+    async with aiohttp.ClientSession(headers=headers) as session:
+>>>>>>> a809647091b7b0a0f46fbbf971c62d19cc5c9b27
         try:
             async with session.post(url, json=payload) as response:
                 if response.status in [200, 201]:
@@ -542,11 +559,16 @@ async def upload_images_to_geovisio(df, collection_id):
     total_successful = 0
     total_failed = 0
     
+<<<<<<< HEAD
     async with aiohttp.ClientSession(
         timeout=timeout,
         connector=connector,
         auto_decompress=False  # 禁用自動解壓縮
     ) as session:
+=======
+    headers = {"Accept-Encoding": "gzip, deflate, identity"}
+    async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+>>>>>>> a809647091b7b0a0f46fbbf971c62d19cc5c9b27
         for batch_num, batch_df in enumerate(batches, 1):
             logger.info(f"📦 處理批次 {batch_num}/{len(batches)}")
             

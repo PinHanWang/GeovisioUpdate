@@ -7,6 +7,7 @@ import logging.config
 from pathlib import Path
 from typing import Dict, Any, Optional
 import pandas as pd
+from EncodingConvertor import convert_csv_encoding
 from dotenv import load_dotenv
 
 # 導入自定義模組
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # 環境變數
-DEV_TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
+TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
 CSV_FILE_PATH = os.getenv("CSV_FILE_PATH")
 SEQUENCE_DELAY = int(os.getenv("SEQUENCE_DELAY", "3"))
 BATCH_DELAY = int(os.getenv("BATCH_DELAY", "300"))
@@ -443,6 +444,7 @@ async def main():
         validate_env()
 
         csv_path = Path(CSV_FILE_PATH)
+        convert_csv_encoding(csv_path, backup=False)
         if not csv_path.exists():
             raise FileNotFoundError(f"The file {csv_path} does not exist.")
 
