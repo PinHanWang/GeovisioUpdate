@@ -1,18 +1,21 @@
-# src/module/TMSUpdate/resource_monitor_simple.py
+# src/module/TMSUpdate/resource_monitor.py
 """
 簡化版資源監控 - 基於 Job Queue 積壓情況
-這是最簡單也最有效的方式!
+
+監控邏輯:
+- Job Queue 積壓 < 100 筆 → 安全,可以繼續上傳
+- Job Queue 積壓 100-500 筆 → 警告,減慢上傳速度
+- Job Queue 積壓 > 500 筆 → 危險,暫停上傳等待處理
 """
 
 import asyncio
 import logging
 import asyncpg
 import os
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
-
 load_dotenv()
 
 
@@ -49,17 +52,18 @@ class ResourceMonitor:
                     max_size=3,
                     timeout=30
                 )
-                logger.info("資源監控器初始化成功")
+                logger.info("資源監控 - 初始化成功")
             except Exception as e:
-                logger.warning(f"無法連線到資料庫,資源監控將被停用: {e}")
+                logger.warning("資源監控 - 資料庫連線失敗: %s,功能將被停用", str(e))
                 self.db_pool = None
         else:
-            logger.warning("未提供資料庫連線,資源監控將被停用")
+            logger.warning("資源監控 - 未提供資料庫連線,功能將被停用")
     
     async def close(self):
         """關閉資料庫連線池"""
         if self.db_pool:
             await self.db_pool.close()
+            logger.info("資源監控 - 資料庫連線池已關閉")
     
     async def get_job_queue_count(self) -> int:
         """
@@ -78,10 +82,10 @@ class ResourceMonitor:
                 )
                 return count or 0
         except Exception as e:
-            logger.error(f"查詢 job_queue 失敗: {e}")
+            logger.error("資源監控 - Job Queue 查詢失敗: %s", str(e))
             return 0
     
-    async def check_resources(self) -> tuple[bool, dict]:
+    async def check_resources(self) -> Tuple[bool, Dict]:
         """
         檢查資源狀態 (基於 Job Queue)
         
@@ -99,15 +103,15 @@ class ResourceMonitor:
             # 安全範圍
             stats['status'] = 'safe'
             is_safe = True
-            logger.debug(f"📊 Job Queue: {queue_count} 筆 (安全)")
+            logger.debug("資源監控 - Job Queue: %d 筆 (安全)", queue_count)
             
         elif queue_count < self.warning_threshold:
             # 警告範圍
             stats['status'] = 'warning'
             is_safe = True  # 仍可繼續,但會減速
             logger.warning(
-                f"⚠️  Job Queue 積壓: {queue_count} 筆 "
-                f"(建議減慢上傳速度)"
+                "資源監控 - Job Queue 積壓: %d 筆 (建議減慢上傳速度)",
+                queue_count
             )
             
         else:
@@ -115,8 +119,8 @@ class ResourceMonitor:
             stats['status'] = 'critical'
             is_safe = False
             logger.error(
-                f"🔴 Job Queue 嚴重積壓: {queue_count} 筆 "
-                f"(需要等待處理)"
+                "資源監控 - Job Queue 嚴重積壓: %d 筆 (需要等待處理)",
+                queue_count
             )
         
         return is_safe, stats
@@ -139,22 +143,22 @@ class ResourceMonitor:
             
             if is_safe:
                 logger.info(
-                    f"✅ Job Queue 已恢復到安全水平 - "
-                    f"剩餘 {queue_count} 筆"
+                    "資源監控 - Job Queue 已恢復到安全水平,剩餘 %d 筆",
+                    queue_count
                 )
                 return True
             
             logger.warning(
-                f"等待 Job Queue 處理... ({waited}/{max_wait}s) - "
-                f"剩餘 {queue_count} 筆"
+                "資源監控 - 等待 Job Queue 處理,已等待 %d/%d 秒,剩餘 %d 筆",
+                waited, max_wait, queue_count
             )
             
             await asyncio.sleep(30)
             waited += 30
         
         logger.error(
-            f"❌ 等待超時 ({max_wait}s), "
-            f"Job Queue 仍有 {queue_count} 筆待處理"
+            "資源監控 - 等待超時 (%d 秒), Job Queue 仍有 %d 筆待處理",
+            max_wait, queue_count
         )
         return False
     
@@ -185,8 +189,8 @@ class ResourceMonitor:
             # 警告,減少 30%
             adjusted_size = max(10, int(default_size * 0.7))
             logger.warning(
-                f"⚠️  Job Queue 積壓 ({queue_count} 筆), "
-                f"batch size 調整: {default_size} → {adjusted_size}"
+                "資源監控 - Job Queue 積壓 (%d 筆), batch size 調整: %d → %d",
+                queue_count, default_size, adjusted_size
             )
             return adjusted_size
         
@@ -194,8 +198,8 @@ class ResourceMonitor:
             # 危險,減半
             adjusted_size = max(5, default_size // 2)
             logger.error(
-                f"🔴 Job Queue 嚴重積壓 ({queue_count} 筆), "
-                f"batch size 調整: {default_size} → {adjusted_size}"
+                "資源監控 - Job Queue 嚴重積壓 (%d 筆), batch size 調整: %d → %d",
+                queue_count, default_size, adjusted_size
             )
             return adjusted_size
     
@@ -223,7 +227,8 @@ class ResourceMonitor:
             # 警告,增加 50% 延遲
             adjusted_delay = int(default_delay * 1.5)
             logger.warning(
-                f"⚠️  增加批次延遲: {default_delay}s → {adjusted_delay}s"
+                "資源監控 - 增加批次延遲: %d 秒 → %d 秒",
+                default_delay, adjusted_delay
             )
             return adjusted_delay
         
@@ -231,13 +236,16 @@ class ResourceMonitor:
             # 危險,延遲加倍
             adjusted_delay = default_delay * 2
             logger.error(
-                f"🔴 大幅增加批次延遲: {default_delay}s → {adjusted_delay}s"
+                "資源監控 - 大幅增加批次延遲: %d 秒 → %d 秒",
+                default_delay, adjusted_delay
             )
             return adjusted_delay
 
 
-# 全域實例
-simple_resource_monitor = SimpleResourceMonitor(
+# ========================================
+# 全域實例 (單例模式)
+# ========================================
+simple_resource_monitor = ResourceMonitor(
     safe_threshold=100,
     warning_threshold=500,
     check_interval=60
@@ -247,7 +255,7 @@ simple_resource_monitor = SimpleResourceMonitor(
 if __name__ == "__main__":
     # 測試
     async def test():
-        monitor = SimpleResourceMonitor()
+        monitor = ResourceMonitor()
         await monitor.initialize()
         
         # 測試檢查

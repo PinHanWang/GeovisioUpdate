@@ -1,7 +1,11 @@
-# src/module/TMSUpdate/large_sequence_handler.py
+# src/module/TMSUpdate/sequence_batch_handler.py
 """
 大型 Sequence 處理模組
-針對大型 sequence 的特殊處理策略
+
+針對大型 sequence 的特殊處理策略:
+- 小型 (< 500 張): 快速處理
+- 中型 (500-2000 張): 中等速度
+- 大型 (> 2000 張): 謹慎處理
 """
 
 import logging
@@ -12,7 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 class SequenceBatchHandler:
-    """大型 Sequence 處理器"""
+    """
+    大型 Sequence 處理器
+    
+    根據序列大小自動調整處理策略:
+    - batch_size: 每批次影像數量
+    - batch_delay: 批次間延遲時間
+    - max_concurrent: 最大並發數
+    """
     
     # Sequence 大小分類閾值
     SMALL_THRESHOLD = 500      # 小型: < 500 張
@@ -54,7 +65,7 @@ class SequenceBatchHandler:
             size: Sequence 中的影像數量
             
         Returns:
-            配置字典 {batch_size, batch_delay, max_concurrent}
+            配置字典 {batch_size, batch_delay, max_concurrent, description}
         """
         seq_type = cls.classify_sequence(size)
         
@@ -63,29 +74,27 @@ class SequenceBatchHandler:
                 'batch_size': 50,
                 'batch_delay': 10,
                 'max_concurrent': 3,
-                'description': '小型 sequence (< 500 張)'
+                'description': '小型序列 (< 500 張)'
             },
             'medium': {
                 'batch_size': 30,
                 'batch_delay': 15,
                 'max_concurrent': 2,
-                'description': '中型 sequence (500-2000 張)'
+                'description': '中型序列 (500-2000 張)'
             },
             'large': {
                 'batch_size': 20,
                 'batch_delay': 20,
                 'max_concurrent': 1,
-                'description': '大型 sequence (> 2000 張)'
+                'description': '大型序列 (> 2000 張)'
             }
         }
         
         config = configs[seq_type]
         logger.info(
-            f"📊 Sequence 分類: {config['description']} "
-            f"({size} 張) - "
-            f"Batch: {config['batch_size']}, "
-            f"Delay: {config['batch_delay']}s, "
-            f"Concurrent: {config['max_concurrent']}"
+            "序列批次 - 分類: %s (%d 張), Batch: %d, Delay: %d 秒, 並發: %d",
+            config['description'], size, config['batch_size'],
+            config['batch_delay'], config['max_concurrent']
         )
         
         return config
@@ -113,34 +122,62 @@ class SequenceBatchHandler:
             batches.append(batch)
         
         logger.info(
-            f"分割完成: {total_rows} 張影像 → "
-            f"{len(batches)} 批次 (每批 ~{batch_size} 張)"
+            "序列批次 - 分割完成: %d 張影像 → %d 批次 (每批約 %d 張)",
+            total_rows, len(batches), batch_size
         )
         
         return batches
     
     def update_stats(self, seq_type: str, image_count: int):
-        """更新統計資訊"""
+        """
+        更新統計資訊
+        
+        Args:
+            seq_type: 序列類型 (small/medium/large)
+            image_count: 影像數量
+        """
         self.stats[seq_type] += 1
         self.stats['total_images'] += image_count
+        
+        logger.debug(
+            "序列批次 - 統計更新: 類型=%s, 數量=%d",
+            seq_type, image_count
+        )
     
     def get_stats(self) -> Dict:
-        """取得統計資訊"""
+        """
+        取得統計資訊
+        
+        Returns:
+            統計資訊字典
+        """
         return self.stats.copy()
     
     def print_summary(self):
         """列印統計摘要"""
-        logger.info("=" * 60)
-        logger.info("📊 Sequence 處理統計")
-        logger.info("=" * 60)
-        logger.info(f"小型 sequences (< 500):    {self.stats['small']}")
-        logger.info(f"中型 sequences (500-2000): {self.stats['medium']}")
-        logger.info(f"大型 sequences (> 2000):   {self.stats['large']}")
-        logger.info(f"總影像數:                   {self.stats['total_images']}")
-        logger.info("=" * 60)
+        logger.info("=" * 80)
+        logger.info("序列處理統計摘要")
+        logger.info("=" * 80)
+        logger.info("%-30s: %10d", "小型序列 (< 500)", self.stats['small'])
+        logger.info("%-30s: %10d", "中型序列 (500-2000)", self.stats['medium'])
+        logger.info("%-30s: %10d", "大型序列 (> 2000)", self.stats['large'])
+        logger.info("%-30s: %10d", "影像總數", self.stats['total_images'])
+        logger.info("=" * 80)
+    
+    def reset_stats(self):
+        """重置統計資訊"""
+        self.stats = {
+            'small': 0,
+            'medium': 0,
+            'large': 0,
+            'total_images': 0
+        }
+        logger.info("序列批次 - 統計資訊已重置")
 
 
-# 全域實例
+# ========================================
+# 全域實例 (單例模式)
+# ========================================
 large_seq_handler = SequenceBatchHandler()
 
 
@@ -151,10 +188,14 @@ if __name__ == "__main__":
     # 測試不同大小的 sequence
     test_sizes = [100, 800, 3000, 5000]
     
+    logger.info("開始測試序列批次處理器")
+    
     for size in test_sizes:
         config = handler.get_batch_config(size)
         seq_type = handler.classify_sequence(size)
         handler.update_stats(seq_type, size)
-        print(f"\n大小: {size}, 配置: {config}")
+        logger.info("測試序列 - 大小: %d, 配置: %s", size, config)
     
     handler.print_summary()
+    
+    logger.info("測試完成")
