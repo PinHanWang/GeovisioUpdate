@@ -13,6 +13,9 @@ from failures import upload_failures, collection_failures
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type, RetryError
 import logging.config
 from logger import LOGGING_CONFIG
+from deduplication import dedup_checker
+from resource_monitor import simple_resource_monitor
+from large_sequence_handler import large_seq_handler
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -24,6 +27,9 @@ TMS_GEOVISIO_URL = os.getenv("TMS_GEOVISIO_URL")
 IMAGE_BASE_PATH = os.getenv("IMAGE_BASE_PATH")
 MAX_CONCURRENT_UPLOADS = int(os.getenv("MAX_CONCURRENT_UPLOADS", "5"))
 UPLOAD_TIMEOUT = int(os.getenv("UPLOAD_TIMEOUT", "60"))
+ENABLE_DEDUPLICATION = os.getenv("ENABLE_DEDUPLICATION", "true").lower() == "true"
+ENABLE_MD5_CHECK = os.getenv("ENABLE_MD5_CHECK", "true").lower() == "true"
+ENABLE_RESOURCE_MONITOR = os.getenv("ENABLE_RESOURCE_MONITOR", "true").lower() == "true"
 
 logger.info(f"TMS_GEOVISIO_URL: {TMS_GEOVISIO_URL}")
 logger.info(f"IMAGE_BASE_PATH: {IMAGE_BASE_PATH}")

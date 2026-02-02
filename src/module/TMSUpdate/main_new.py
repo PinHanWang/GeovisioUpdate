@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 # 導入自定義模組
 from DataPreprocessing import data_preprocessing
-from GeovisioApi import create_collection, upload_images_to_geovisio, get_all_collections
+from GeovisioApi_new import create_collection, upload_images_to_geovisio, get_all_collections
 from failures import upload_failures, collection_failures
 from logger import LOGGING_CONFIG
 
@@ -52,6 +52,7 @@ def validate_env() -> None:
     OSError
         如果建立日誌目錄失敗。
     """
+    
     if TMS_GEOVISIO_URL is None:
         raise ValueError(
             "TMS_GEOVISIO_URL is not set in the environment variables.")
