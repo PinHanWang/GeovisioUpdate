@@ -7,11 +7,12 @@ import logging.config
 from pathlib import Path
 from typing import Dict, Any, Optional
 import pandas as pd
+from EncodingConvertor import convert_csv_encoding
 from dotenv import load_dotenv
 
 # 導入自定義模組
 from DataPreprocessing import data_preprocessing
-from GeovisioApi import create_collection, upload_images_to_geovisio, get_all_collections
+from GeovisioApi_new import create_collection, upload_images_to_geovisio, get_all_collections
 from failures import upload_failures, collection_failures
 from logger import LOGGING_CONFIG
 
@@ -442,6 +443,7 @@ async def main():
         validate_env()
 
         csv_path = Path(CSV_FILE_PATH)
+        convert_csv_encoding(csv_path, backup=False)
         if not csv_path.exists():
             raise FileNotFoundError(f"The file {csv_path} does not exist.")
 

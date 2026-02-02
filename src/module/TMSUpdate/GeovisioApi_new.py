@@ -117,7 +117,8 @@ async def get_all_collections():
             獲取集合時發生錯誤。
     """
     url = f"{TMS_GEOVISIO_URL}/api/collections"
-    async with aiohttp.ClientSession() as session:
+    headers = {"Accept-Encoding": "gzip, deflate, identity"}
+    async with aiohttp.ClientSession(headers=headers) as session:
 
         try:
             logger.info(f"Fetching all collections.")
@@ -169,7 +170,8 @@ async def get_collection_by_items_id(collection_id):
     """
     url = f"{TMS_GEOVISIO_URL}/api/collections/{collection_id}"
 
-    async with aiohttp.ClientSession() as session:
+    headers = {"Accept-Encoding": "gzip, deflate, identity"}
+    async with aiohttp.ClientSession(headers=headers) as session:
         try:
             logger.info(f"Fetching collection with ID: {collection_id}")
 
@@ -249,6 +251,9 @@ async def create_collection(title, description, keywords, bbox=None, start_time=
         "extent": extent
     }
 
+    # ========================================
+    # 修正 Brotli 解碼問題 - 使用 headers 指定接受的編碼
+    # ========================================
     headers = {"Accept-Encoding": "gzip, deflate, identity"}
     async with aiohttp.ClientSession(headers=headers) as session:
         try:
