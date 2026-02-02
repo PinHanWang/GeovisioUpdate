@@ -53,7 +53,6 @@ def validate_env() -> None:
     OSError
         如果建立日誌目錄失敗。
     """
-    
     if TMS_GEOVISIO_URL is None:
         raise ValueError(
             "TMS_GEOVISIO_URL is not set in the environment variables.")
