@@ -126,7 +126,7 @@ class ImageUploader:
         session: aiohttp.ClientSession,
         collection_id: str,
         keyname: str,
-        gps_time: str,
+        gps_time: Any, # 這裡改為 Any 因為傳進來的可能是 Timestamp 物件
         gps_x: float,
         gps_y: float,
         speed: float,
@@ -136,6 +136,15 @@ class ImageUploader:
         """
         上傳單張影像的實際實現 (採用流式傳輸)
         """
+        # --- 新增：處理 Pandas Timestamp 序列化問題 ---
+        formatted_gps_time = gps_time
+        if hasattr(gps_time, 'isoformat'):
+            # 如果是 Pandas Timestamp 或 datetime 物件，轉為字串
+            formatted_gps_time = gps_time.isoformat()
+        elif not isinstance(gps_time, str):
+            formatted_gps_time = str(gps_time)
+        # --------------------------------------------
+
         # 1. 去重檢查
         if self.enable_deduplication and self.dedup_checker:
             try:
@@ -160,14 +169,13 @@ class ImageUploader:
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"影像檔案不存在: {image_path}")
 
-        # 重要優化：使用 'with open' 配合 aiohttp.FormData 進行流式上傳
-        # 這種方式數據直接從磁碟流向網路，不會將整張大圖載入 Python 變數記憶體
         try:
             with open(image_path, 'rb') as img_file:
                 form_data = aiohttp.FormData()
                 form_data.add_field("position", str(seq))
                 form_data.add_field("isBlurred", "true")
-                form_data.add_field("override_capture_time", gps_time)
+                # 使用處理過的字串格式 formatted_gps_time
+                form_data.add_field("override_capture_time", formatted_gps_time)
                 form_data.add_field("override_latitude", str(gps_y))
                 form_data.add_field("override_longitude", str(gps_x))
                 
@@ -196,7 +204,7 @@ class ImageUploader:
         except ImageAlreadyExistsError:
             return True
         except Exception as e:
-            if not isinstance(e, (RetryableUploadError, FileNotFoundError)):
+            if not isinstance(e, (RetryableUploadError, FileNotFoundError, ImageAlreadyExistsError)):
                 logger.error("影像上傳 - 未預期例外: KeyName=%s, 錯誤=%s", keyname, str(e))
             raise
 

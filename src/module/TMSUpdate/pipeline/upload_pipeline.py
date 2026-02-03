@@ -100,8 +100,11 @@ class GeoVisioUploadPipeline:
         # 2. 初始化 API 客戶端並注入 Session
         try:
             from src.module.TMSUpdate.api.geovisio_api_client import GeoVisioAPIClient
+            from src.module.TMSUpdate.api.image_uploader import ImageUploader
         except ImportError:
-            from api.geovisio_api_client import GeoVisioAPIClient
+            # 如果是在模組內部運行，才使用相對路徑
+            from ..api.geovisio_api_client import GeoVisioAPIClient
+            from ..api.image_uploader import ImageUploader
         
         self.api_client = GeoVisioAPIClient(
             base_url=self.config['tms_geovisio_url'],
@@ -183,7 +186,166 @@ class GeoVisioUploadPipeline:
         df['GPSTime'] = pd.to_datetime(df['GPSTime'], errors='coerce')
         df['Date'] = df['GPSTime'].dt.date
         return df.groupby('Date')
+    def should_skip_date(
+        self,
+        collection_date: datetime.date,
+        cut_off_date: Optional[datetime.date] = None
+    ) -> bool:
+        """
+        檢查是否應該跳過指定日期
+        
+        Args:
+            collection_date: 要檢查的日期
+            cut_off_date: 截止日期 (預設: 2025-06-01)
+            
+        Returns:
+            是否跳過
+        """
+        if cut_off_date is None:
+            cut_off_date = datetime.date(2025, 6, 1)
+        
+        skip = collection_date < cut_off_date
+        
+        if skip:
+            logger.info(
+                "流程管理器 - 跳過日期: %s (早於 %s)",
+                collection_date, cut_off_date
+            )
+        
+        return skip
+    
+    async def upload_single_sequence(
+        self,
+        seq_data: pd.DataFrame,
+        seq_id: str,
+        collection_date: datetime.date,
+        seq_count: int,
+        total_seq: int
+    ) -> Optional[str]:
+        """上傳單個序列"""
+        logger.info("流程管理器 - 處理序列 %d/%d: ID=%s, 日期=%s", seq_count, total_seq, seq_id, collection_date)
+        
+        # 1. 排序
+        seq_sorted_data = seq_data.sort_values(by='GPSTime')
+        if seq_sorted_data.empty:
+            logger.error("流程管理器 - 序列資料為空, 跳過: ID=%s", seq_id)
+            return None
 
+        # --- 核心修改：解決 Timestamp 序列化失敗問題 ---
+        # 在傳給 uploader 之前，確保所有的 Timestamp 物件轉為 ISO 字串格式
+        upload_df = seq_sorted_data.copy()
+        if pd.api.types.is_datetime64_any_dtype(upload_df['GPSTime']):
+            # 轉換為 GeoVisio 喜歡的格式：'2025-06-18T09:38:28.079'
+            upload_df['GPSTime'] = upload_df['GPSTime'].dt.strftime('%Y-%m-%dT%H:%M:%S.%f').str[:-3]
+        # ----------------------------------------------
+
+        # 2. 創建 Collection
+        title = f"交工案第一分案(10米道路) Date: {collection_date}; Sequence ID: {seq_id}"
+        description = f"Data for {collection_date}; Sequence ID: {seq_id}"
+        keywords = ["交工案", "資料蒐集", f"Sequence ID:{seq_id}", f"日期:{collection_date}"]
+        
+        collection_id = await self.api_client.create_collection(
+            title=title, description=description, keywords=keywords
+        )
+        
+        if not collection_id:
+            return None
+
+        # 3. 執行影像上傳 (使用轉換後的 upload_df)
+        uploaded_result = await self.uploader.upload_sequence(upload_df, collection_id)
+        
+        if uploaded_result and uploaded_result.get("successful", 0) > 0:
+            logger.info("流程管理器 - 序列上傳成功: ID=%s, 成功=%d", seq_id, uploaded_result["successful"])
+            return collection_id
+        
+        return None
+    
+    async def upload_date_group(
+        self,
+        collection_date: datetime.date,
+        group_data: pd.DataFrame
+    ) -> Dict:
+        """
+        上傳單日資料
+        
+        Args:
+            collection_date: 日期
+            group_data: 該日期的資料
+            
+        Returns:
+            上傳結果統計
+        """
+        logger.info("流程管理器 - 處理日期: %s", collection_date)
+        
+        # 檢查是否跳過
+        if self.should_skip_date(collection_date):
+            return {
+                "date": collection_date,
+                "total_seq": 0,
+                "successful_seq": 0,
+                "failed_seq": 0,
+                "skipped": True
+            }
+        
+        # 按 group_id 分組
+        if 'group_id' not in group_data.columns:
+            raise ValueError("DataFrame 中找不到 'group_id' 欄位")
+        
+        seq_data_groups = group_data.groupby('group_id')
+        total_seq = len(seq_data_groups)
+        
+        if total_seq == 0:
+            logger.warning("流程管理器 - 無序列資料: %s", collection_date)
+            return {
+                "date": collection_date,
+                "total_seq": 0,
+                "successful_seq": 0,
+                "failed_seq": 0
+            }
+        
+        logger.info("流程管理器 - 日期 %s 共有 %d 個序列", collection_date, total_seq)
+        
+        # 上傳所有序列
+        successful_seq = 0
+        failed_seq = 0
+        
+        for count, (seq_id, seq_data) in enumerate(seq_data_groups, 1):
+            try:
+                collection_id = await self.upload_single_sequence(
+                    seq_data, seq_id, collection_date, count, total_seq
+                )
+                
+                if collection_id:
+                    successful_seq += 1
+                else:
+                    failed_seq += 1
+                
+                # 序列間延遲
+                if count < total_seq:
+                    await asyncio.sleep(self.config['sequence_delay'])
+            
+            except Exception as e:
+                logger.error(
+                    "流程管理器 - 序列處理錯誤: ID=%s, 日期=%s, 錯誤=%s",
+                    seq_id, collection_date, str(e),
+                    exc_info=True
+                )
+                failed_seq += 1
+        
+        result = {
+            "date": collection_date,
+            "total_seq": total_seq,
+            "successful_seq": successful_seq,
+            "failed_seq": failed_seq
+        }
+        
+        logger.info(
+            "流程管理器 - 日期完成: %s, 成功=%d/%d",
+            collection_date, successful_seq, total_seq
+        )
+        
+        return result
+    
     async def run(self):
         """執行主流程"""
         self.stats['start_time'] = time.time()
@@ -254,20 +416,56 @@ class GeoVisioUploadPipeline:
         logger.info("流程管理器 - 資源清理完成")
 
     # 其餘輔助方法 (save_reports, print_final_summary 等) 保持邏輯不變 ...
+    def print_final_summary(self):
+        """列印最終統計報告"""
+        logger.info("=" * 80)
+        logger.info("最終處理摘要")
+        logger.info("=" * 80)
+        logger.info("%-30s: %10d", "處理日期總數", self.stats['total_dates'])
+        logger.info("%-30s: %10d", "序列總數", self.stats['total_sequences'])
+        logger.info("%-30s: %10d", "成功序列", self.stats['successful_sequences'])
+        logger.info("%-30s: %10d", "失敗序列", self.stats['failed_sequences'])
+        
+        if self.failure_tracker:
+            logger.info("%-30s: %10d", "上傳失敗", self.failure_tracker.get_upload_failure_count())
+            logger.info("%-30s: %10d", "Collection 失敗", self.failure_tracker.get_collection_failure_count())
+        
+        logger.info("=" * 80)
+        
+        # 顯示去重統計
+        if self.dedup_checker:
+            self.dedup_checker.print_stats()
+    
     async def save_reports(self, date_results: List[Dict]):
-        """儲存報告"""
+        """
+        儲存報告
+        
+        Args:
+            date_results: 每日處理結果列表
+        """
         timestamp = time.strftime('%Y-%m-%d_%H-%M-%S')
+        
+        # ========================================
+        # 1. 儲存失敗報告
+        # ========================================
         if self.failure_tracker:
             await self.failure_tracker.save_reports()
+        
+        # ========================================
+        # 2. 儲存處理結果統計
+        # ========================================
         if date_results:
-            results_df = pd.DataFrame(date_results)
-            results_path = Path("logs") / f"{timestamp}_processing_results.csv"
-            results_df.to_csv(results_path, index=False, encoding='utf-8-sig')
-            logger.info("報告已儲存: %s", results_path)
-
-    def print_final_summary(self):
-        """列印最終摘要"""
-        logger.info("=" * 60)
-        logger.info("上傳任務完成 - 總日期: %d, 總序列: %d, 成功: %d", 
-                    self.stats['total_dates'], self.stats['total_sequences'], self.stats['successful_sequences'])
-        logger.info("=" * 60)
+            try:
+                results_df = pd.DataFrame(date_results)
+                results_path = Path("logs") / f"{timestamp}_processing_results.csv"
+                results_df.to_csv(results_path, index=False, encoding='utf-8-sig')
+                logger.info("流程管理器 - 處理結果已儲存: %s", results_path)
+            except Exception as e:
+                logger.error("流程管理器 - 儲存處理結果失敗: %s", str(e))
+        
+        # ========================================
+        # 3. 記錄執行時間
+        # ========================================
+        if self.stats['start_time'] and self.stats['end_time']:
+            elapsed_time = self.stats['end_time'] - self.stats['start_time']
+            logger.info("流程管理器 - 總執行時間: %.2f 秒", elapsed_time)
