@@ -56,7 +56,7 @@ class DuplicateChecker:
         """
         self.db_url = db_url or os.getenv("DATABASE_URL")
         self.db_pool = None
-        
+        self.max_cache_size = 100000
         # 快取
         self.md5_cache: Set[str] = set()
         self.keyname_cache: Set[str] = set()
@@ -223,6 +223,19 @@ class DuplicateChecker:
             if close_session and session:
                 await session.close()
     
+    def _check_cache_size(self):
+        """檢查並清理過大的快取"""
+        if len(self.md5_cache) > self.max_cache_size:
+            # 保留最後 80% 的快取（簡易 LRU）
+            keep_size = int(self.max_cache_size * 0.8)
+            self.md5_cache = set(list(self.md5_cache)[-keep_size:])
+            logger.warning("去重檢查 - MD5 快取已清理: %d 筆", len(self.md5_cache))
+        
+        if len(self.keyname_cache) > self.max_cache_size:
+            keep_size = int(self.max_cache_size * 0.8)
+            self.keyname_cache = set(list(self.keyname_cache)[-keep_size:])
+            logger.warning("去重檢查 - KeyName 快取已清理: %d 筆", len(self.keyname_cache))
+
     async def check_md5_exists(self, md5: str) -> bool:
         """
         檢查 MD5 是否已存在
@@ -233,6 +246,8 @@ class DuplicateChecker:
         Returns:
             是否已存在
         """
+        self._check_cache_size()
+
         if not md5:
             return False
         
@@ -281,6 +296,9 @@ class DuplicateChecker:
         Returns:
             是否已存在
         """
+
+        self._check_cache_size()
+        
         if not keyname:
             return False
         

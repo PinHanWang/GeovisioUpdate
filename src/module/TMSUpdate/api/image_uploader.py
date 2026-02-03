@@ -1,10 +1,19 @@
-import json
+"""
+影像上傳管理器模組
+
+負責影像上傳的複雜邏輯,包括:
+- 重試機制
+- 去重檢查
+- 資源監控
+- 批次上傳
+"""
+
 import os
 import io
 import asyncio
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, TYPE_CHECKING
 import aiohttp
 import aiofiles
 import pandas as pd
@@ -12,24 +21,24 @@ from aiohttp import ClientTimeout
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 from dotenv import load_dotenv
 
-from .geovisio_api_client import GeoVisioAPIClient
+# 從獨立模組導入異常類別 (避免循環 import)
+try:
+    from src.module.TMSUpdate.api.exceptions import (
+        ImageAlreadyExistsError,
+        RetryableUploadError
+    )
+except ImportError:
+    from .exceptions import ImageAlreadyExistsError, RetryableUploadError
+
+# Type hint 用 (避免循環 import)
+if TYPE_CHECKING:
+    from src.module.TMSUpdate.api.geovisio_api_client import GeoVisioAPIClient
 
 logger = logging.getLogger(__name__)
 
 # 載入環境變數
 load_dotenv()
 
-# ========================================
-# 自定義異常
-# ========================================
-class ImageAlreadyExistsError(Exception):
-    """圖片已存在的異常,不應重試"""
-    pass
-
-
-class RetryableUploadError(Exception):
-    """可重試的上傳異常"""
-    pass
 
 # ========================================
 # 影像上傳管理器
@@ -54,7 +63,7 @@ class ImageUploader:
     
     def __init__(
         self,
-        api_client: GeoVisioAPIClient,
+        api_client: "GeoVisioAPIClient",
         dedup_checker=None,
         resource_monitor=None,
         seq_handler=None,
@@ -130,16 +139,7 @@ class ImageUploader:
             )
             self.failure_tracker.record_collection_failure(collection_id)
     
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_fixed(2),
-        retry=retry_if_exception_type((
-            RetryableUploadError,
-            asyncio.TimeoutError,
-            FileNotFoundError
-        ))
-    )
-    async def upload_single_image(
+    async def _upload_single_image_impl(
         self,
         session: aiohttp.ClientSession,
         collection_id: str,
@@ -152,7 +152,7 @@ class ImageUploader:
         seq: int
     ) -> bool:
         """
-        上傳單張影像 (帶重試)
+        上傳單張影像的實際實現 (不含 retry decorator)
         
         Args:
             session: aiohttp ClientSession
@@ -173,6 +173,9 @@ class ImageUploader:
             RetryableUploadError: 可重試的錯誤
             FileNotFoundError: 檔案不存在
         """
+        image_data = None
+        image_bytes = None
+        
         # ========================================
         # 1. 去重檢查
         # ========================================
@@ -278,8 +281,17 @@ class ImageUploader:
             raise RetryableUploadError(str(e))
         
         finally:
-            if 'image_data' in locals() and image_data is not None:
-                image_data.close()
+            # 清理資源
+            if image_data is not None:
+                try:
+                    image_data.close()
+                except Exception:
+                    pass
+            if image_bytes is not None:
+                try:
+                    del image_bytes
+                except Exception:
+                    pass
     
     async def safe_upload_image(
         self,
@@ -295,7 +307,7 @@ class ImageUploader:
         seq: int
     ) -> bool:
         """
-        安全上傳影像 (帶並發控制)
+        安全上傳影像 (帶並發控制和重試機制)
         
         Args:
             session: aiohttp ClientSession
@@ -314,23 +326,38 @@ class ImageUploader:
         """
         async with semaphore:
             try:
-                # 使用重試機制的上傳,並傳遞 retry_error_callback
-                upload_method = retry(
+                # 包裝重試邏輯
+                upload_with_retry = retry(
                     stop=stop_after_attempt(3),
                     wait=wait_fixed(2),
                     retry=retry_if_exception_type((
                         RetryableUploadError,
-                        asyncio.TimeoutError,
-                        FileNotFoundError
+                        asyncio.TimeoutError
                     )),
                     retry_error_callback=self._log_retry_error
-                )(self.upload_single_image)
+                )(self._upload_single_image_impl)
                 
-                result = await upload_method(
+                result = await upload_with_retry(
                     session, collection_id, keyname, gps_time,
                     gps_x, gps_y, speed, img_url, seq
                 )
                 return True if result else False
+            
+            except ImageAlreadyExistsError:
+                # 影像已存在視為成功
+                return True
+            
+            except FileNotFoundError as e:
+                # 檔案不存在,記錄失敗但不重試
+                logger.error("影像上傳 - 檔案不存在: KeyName=%s, 錯誤=%s", keyname, str(e))
+                if self.failure_tracker:
+                    self.failure_tracker.record_upload_failure(
+                        keyname=keyname,
+                        collection_id=collection_id,
+                        error=str(e),
+                        retry_count=0
+                    )
+                return False
             
             except Exception as e:
                 logger.error(
@@ -482,6 +509,10 @@ class ImageUploader:
                     except Exception as e:
                         logger.error("影像上傳 - 批次錯誤: %d, 錯誤=%s", batch_num, str(e))
                         total_failed += len(tasks)
+                
+                # 清理 tasks 列表
+                tasks.clear()
+                del tasks
                 
                 # 批次間延遲
                 if batch_num < len(batches):

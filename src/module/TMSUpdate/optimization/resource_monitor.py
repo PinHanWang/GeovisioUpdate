@@ -240,6 +240,29 @@ class ResourceMonitor:
                 default_delay, adjusted_delay
             )
             return adjusted_delay
+        
+    def __del__(self):
+        """析構函數 - 確保資源釋放"""
+        if self.db_pool and not self.db_pool._closed:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(self.close())
+                else:
+                    loop.run_until_complete(self.close())
+            except Exception:
+                pass  # 忽略清理錯誤
+
+    async def __aenter__(self):
+        """支援 async context manager"""
+        await self.initialize()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """支援 async context manager"""
+        await self.close()
+        return False
 
 
 # ========================================
