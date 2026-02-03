@@ -23,9 +23,9 @@ import pandas as pd
 from dotenv import load_dotenv
 
 # 導入自定義模組
-from csv_encoding_converter import convert_csv_encoding
-from image_data_preprocessor import data_preprocessing
-from logging_config import LOGGING_CONFIG
+from src.module.TMSUpdate.core.csv_encoding_converter import convert_csv_encoding
+from src.module.TMSUpdate.core.image_data_preprocessor import data_preprocessing
+from src.module.TMSUpdate.config.logging_config import LOGGING_CONFIG
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -143,7 +143,7 @@ class GeoVisioUploadPipeline:
         # ========================================
         # 1. API 客戶端
         # ========================================
-        from geovisio_api_client import GeoVisioAPIClient
+        from src.module.TMSUpdate.api.geovisio_api_client import GeoVisioAPIClient
         
         self.api_client = GeoVisioAPIClient(
             base_url=self.config['tms_geovisio_url']
@@ -153,7 +153,7 @@ class GeoVisioUploadPipeline:
         # ========================================
         # 2. 失敗追蹤器
         # ========================================
-        from failure_checker import get_failure_tracker
+        from src.module.TMSUpdate.core.failure_checker import get_failure_tracker
         
         self.failure_tracker = get_failure_tracker()
         self.failure_tracker.clear()  # 清空舊記錄
@@ -164,7 +164,7 @@ class GeoVisioUploadPipeline:
         # ========================================
         if self.config['enable_deduplication']:
             try:
-                from duplicate_checker import get_duplicate_checker
+                from src.module.TMSUpdate.optmization.duplicate_checker import get_duplicate_checker
                 
                 self.dedup_checker = get_duplicate_checker()
                 await self.dedup_checker.initialize()
@@ -179,7 +179,7 @@ class GeoVisioUploadPipeline:
         # ========================================
         if self.config['enable_resource_monitor']:
             try:
-                from resource_monitor import simple_resource_monitor
+                from src.module.TMSUpdate.optmization.resource_monitor import simple_resource_monitor
                 
                 self.resource_monitor = simple_resource_monitor
                 await self.resource_monitor.initialize()
@@ -193,7 +193,7 @@ class GeoVisioUploadPipeline:
         # 5. 序列批次處理器
         # ========================================
         try:
-            from sequence_batch_handler import large_seq_handler
+            from src.module.TMSUpdate.optmization.sequence_batch_handler import large_seq_handler
             
             self.seq_handler = large_seq_handler
             logger.info("流程管理器 - 序列批次處理器已初始化")
@@ -204,7 +204,7 @@ class GeoVisioUploadPipeline:
         # ========================================
         # 6. 影像上傳器
         # ========================================
-        from geovisio_api_client import ImageUploader
+        from src.module.TMSUpdate.api.geovisio_api_client import ImageUploader
         
         self.uploader = ImageUploader(
             api_client=self.api_client,

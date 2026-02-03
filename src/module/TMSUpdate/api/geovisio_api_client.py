@@ -723,9 +723,9 @@ async def get_collection_by_items_id(collection_id):
 async def upload_images_to_geovisio(df, collection_id):
     """向後相容的 upload_images_to_geovisio 函數"""
     # 這裡需要從外部傳入依賴,暫時用 None
-    from src.module.TMSUpdate.duplicate_checker import dedup_checker
-    from resource_monitor import simple_resource_monitor
-    from src.module.TMSUpdate.sequence_batch_handler import large_seq_handler
+    from src.module.TMSUpdate.optmization.duplicate_checker import dedup_checker
+    from src.module.TMSUpdate.optmization.resource_monitor import simple_resource_monitor
+    from src.module.TMSUpdate.optmization.sequence_batch_handler import large_seq_handler
     
     client = GeoVisioAPIClient(base_url=os.getenv("TMS_GEOVISIO_URL"))
     uploader = ImageUploader(

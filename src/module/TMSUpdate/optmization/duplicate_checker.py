@@ -469,7 +469,7 @@ def get_duplicate_checker() -> DuplicateChecker:
 # ========================================
 if __name__ == "__main__":
     import asyncio
-    from logging_config import setup_logging
+    from src.module.TMSUpdate.config.logging_config import setup_logging
     
     async def test():
         """測試程式"""
