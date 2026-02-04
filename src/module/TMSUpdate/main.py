@@ -1,10 +1,5 @@
 """
 GeoVisio 上傳流程主程式入口
-
-這是程式的主要入口點,負責:
-1. 創建 Pipeline 實例
-2. 執行上傳流程
-3. 處理異常和清理資源
 """
 
 import sys
@@ -15,14 +10,13 @@ import logging.config
 try:
     from src.module.TMSUpdate.pipeline.upload_pipeline import GeoVisioUploadPipeline
     from src.module.TMSUpdate.config.logging_config import LOGGING_CONFIG
-    # 導入監控模組與設定
+    from src.module.TMSUpdate.config.settings import Settings  # 改成大寫
     from src.module.TMSUpdate.utils.docker_monitor import HawserDockerMonitor
-    from src.module.TMSUpdate.config.settings import settings
 except ImportError:
-    from pipeline.upload_pipeline import GeoVisioUploadPipeline
-    from config.logging_config import LOGGING_CONFIG
-    from utils.docker_monitor import HawserDockerMonitor
-    from config.settings import settings
+    from .pipeline.upload_pipeline import GeoVisioUploadPipeline  # 加上 .
+    from .config.logging_config import LOGGING_CONFIG  # 加上 .
+    from .config.settings import Settings  # 加上 . 並改成大寫
+    from .utils.docker_monitor import HawserDockerMonitor  # 加上 .
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -31,17 +25,14 @@ logger = logging.getLogger(__name__)
 
 async def main():
     """主程式入口"""
-    # 1. 初始化 Pipeline 與監控器
     pipeline = GeoVisioUploadPipeline()
     monitor = HawserDockerMonitor()
     
-    # 2. 啟動背景監控任務
-    # 使用 settings 裡面的間隔時間 (300秒)
-    monitor_task = asyncio.create_task(monitor.start(interval=settings.MONITOR_INTERVAL))
+    # 使用 Settings（大寫）
+    monitor_task = asyncio.create_task(monitor.start(interval=Settings.MONITOR_INTERVAL))
     
     try:
         logger.info("GeoVisio 上傳流程開始，背景監控已啟動...")
-        # 3. 執行主上傳流程
         await pipeline.run()
         
     except KeyboardInterrupt:
@@ -50,7 +41,6 @@ async def main():
         logger.error("程式執行失敗: %s", str(e), exc_info=True)
         sys.exit(1)
     finally:
-        # 4. 清理資源：停止監控並清理 Pipeline
         logger.info("正在關閉服務與監控任務...")
         monitor.stop()
         
@@ -64,5 +54,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    # 啟動非同步主程式
     asyncio.run(main())

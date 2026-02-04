@@ -1,35 +1,49 @@
+"""
+Docker 容器效能監控模組
+
+透過 Hawser API 監控 GeoVisio 容器的記憶體與 CPU 使用率，
+並在超過閾值時發送 Discord 告警。
+"""
+
 import asyncio
 import aiohttp
 import logging
-import os
-from dotenv import load_dotenv
+
+# 導入設定
+try:
+    from src.module.TMSUpdate.config.settings import Settings
+except ImportError:
+    from ..config.settings import Settings
+
 logger = logging.getLogger(__name__)
 
-# 載入環境變數
-load_dotenv()   
+
 class HawserDockerMonitor:
     def __init__(self):
         """
-        初始化監控器，從環境變數讀取配置。
-        目標：監控 192.168.61.1:5001 的容器效能 (透過 Hawser 2376)
+        初始化監控器，從 Settings 讀取配置。
         """
-        # 監控目標伺服器 IP (.61.1)
-        self.target_ip = os.getenv('DOCKER_TARGET_IP')
-        # Hawser API 地址 (2376 Port)
-        self.hawser_url = f"http://{self.target_ip}:2376/v1/containers"
+        # 從 Settings 讀取配置
+        self.target_ip = Settings.DOCKER_TARGET_IP
+        self.hawser_url = f"http://{self.target_ip}:{Settings.HAWSER_PORT}/v1/containers"
         
         # Discord 配置
-        self.token = os.getenv('DISCORD_BOT_TOKEN')
-        self.channel_id = os.getenv('DISCORD_CHANNEL_ID')
+        self.token = Settings.DISCORD_BOT_TOKEN
+        self.channel_id = Settings.DISCORD_CHANNEL_ID
         
         # 容器資訊
-        self.container_name = os.getenv('DOCKER_CONTAINER_NAME')
+        self.container_name = Settings.DOCKER_CONTAINER_NAME
         self.service_port = "5001"
         
-        # 告警閥值 (3GB = 3072 MB)
-        self.mem_threshold_mb = 3072 
+        # 告警閥值
+        self.mem_threshold_mb = Settings.MONITOR_MEM_THRESHOLD_MB
         
         self._stop_event = asyncio.Event()
+        
+        logger.info(
+            "Docker 監控器 - 初始化完成: 目標=%s, 容器=%s, 告警閾值=%d MB",
+            self.target_ip, self.container_name, self.mem_threshold_mb
+        )
 
     async def send_to_discord(self, message: str):
         """發送訊息至指定 Discord 頻道"""

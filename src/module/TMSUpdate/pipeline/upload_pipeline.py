@@ -26,10 +26,10 @@ try:
     from src.module.TMSUpdate.config.logging_config import LOGGING_CONFIG
     from src.module.TMSUpdate.config.settings import Settings
 except ImportError:
-    from core.csv_encoding_converter import convert_csv_encoding
-    from core.image_data_preprocessor import data_preprocessing
-    from config.logging_config import LOGGING_CONFIG
-    from config.settings import Settings
+    from ..core.csv_encoding_converter import convert_csv_encoding
+    from ..core.image_data_preprocessor import data_preprocessing
+    from ..config.logging_config import LOGGING_CONFIG
+    from ..config.settings import Settings
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -176,7 +176,7 @@ class GeoVisioUploadPipeline:
         try:
             from src.module.TMSUpdate.api.image_uploader import ImageUploader
         except ImportError:
-            from api.image_uploader import ImageUploader
+            from ..api.image_uploader import ImageUploader
         
         self.uploader = ImageUploader(
             api_client=self.api_client,
