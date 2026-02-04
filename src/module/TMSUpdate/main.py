@@ -5,18 +5,26 @@ GeoVisio 上傳流程主程式入口
 import sys
 import asyncio
 import logging.config
+from pathlib import Path
 
+# ========================================
+# 動態調整 Python Path（支援直接執行）
+# ========================================
+# 取得專案根目錄 (GeovisioUpdate)
+_current_file = Path(__file__).resolve()
+_project_root = _current_file.parent.parent.parent.parent  # TMSUpdate -> module -> src -> GeovisioUpdate
+
+# 如果專案根目錄不在 sys.path 中，加入它
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+# ========================================
 # 導入 Pipeline 與配置
-try:
-    from src.module.TMSUpdate.pipeline.upload_pipeline import GeoVisioUploadPipeline
-    from src.module.TMSUpdate.config.logging_config import LOGGING_CONFIG
-    from src.module.TMSUpdate.config.settings import Settings  # 改成大寫
-    from src.module.TMSUpdate.utils.docker_monitor import HawserDockerMonitor
-except ImportError:
-    from .pipeline.upload_pipeline import GeoVisioUploadPipeline  # 加上 .
-    from .config.logging_config import LOGGING_CONFIG  # 加上 .
-    from .config.settings import Settings  # 加上 . 並改成大寫
-    from .utils.docker_monitor import HawserDockerMonitor  # 加上 .
+# ========================================
+from src.module.TMSUpdate.pipeline.upload_pipeline import GeoVisioUploadPipeline
+from src.module.TMSUpdate.config.logging_config import LOGGING_CONFIG
+from src.module.TMSUpdate.config.settings import Settings
+from src.module.TMSUpdate.utils.docker_monitor import HawserDockerMonitor
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -28,7 +36,7 @@ async def main():
     pipeline = GeoVisioUploadPipeline()
     monitor = HawserDockerMonitor()
     
-    # 使用 Settings（大寫）
+    # 使用 Settings 讀取監控間隔
     monitor_task = asyncio.create_task(monitor.start(interval=Settings.MONITOR_INTERVAL))
     
     try:
