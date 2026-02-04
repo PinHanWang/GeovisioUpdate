@@ -22,7 +22,12 @@ from typing import Optional, Set, Tuple
 import aiohttp
 import asyncpg
 from dotenv import load_dotenv
-from config.settings import Settings
+
+# 導入設定
+try:
+    from src.module.TMSUpdate.config.settings import Settings
+except ImportError:
+    from ..config.settings import Settings
 
 # 取得日誌器
 logger = logging.getLogger(__name__)

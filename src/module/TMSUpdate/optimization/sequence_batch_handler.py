@@ -14,11 +14,11 @@ import logging
 from typing import List, Dict
 import pandas as pd
 
-# 從 settings 讀取配置
+# 導入設定
 try:
     from src.module.TMSUpdate.config.settings import Settings
 except ImportError:
-    from config.settings import Settings
+    from ..config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
