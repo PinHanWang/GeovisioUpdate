@@ -54,7 +54,7 @@ class GeoVisioAPIClient:
         
         # 修正編碼問題
         self.headers = {"Accept-Encoding": "gzip, deflate, identity"}
-        logger.info("API 客戶端 - 初始化完成 (連線複用模式), URL: %s", self.base_url)
+        logger.info("API 客戶端 - 初始化完成, URL: %s", self.base_url)
 
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Any]:
         """
@@ -170,5 +170,3 @@ async def get_collection_by_items_id(collection_id):
         return await client.get_collection_by_id(collection_id)
     finally:
         await session.close()
-
-# upload_images_to_geovisio 建議在 Pipeline 層級初始化，此處略過以保持模組純粹  

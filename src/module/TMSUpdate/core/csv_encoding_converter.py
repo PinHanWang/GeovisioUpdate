@@ -61,7 +61,7 @@ class CSVEncodingConverter:
                 confidence = result['confidence']
                 
                 logger.debug(
-                    "編碼轉換 - 偵測編碼: 檔案=%s, 編碼=%s, 信心度=%.2f%%",
+                    "編碼轉換 - 偵測編碼類型: 檔案=%s, 編碼=%s, 信心度=%.2f%%",
                     file_path.name, encoding, confidence * 100
                 )
                 
@@ -94,7 +94,7 @@ class CSVEncodingConverter:
                 source_encoding = self.detect_encoding(file_path)
                 
                 if source_encoding is None:
-                    logger.error("編碼轉換 - 無法偵測編碼: %s", file_path.name)
+                    logger.error("編碼轉換 - 無法偵測編碼類型: %s", file_path.name)
                     self.failed_count += 1
                     return False
             
@@ -128,7 +128,7 @@ class CSVEncodingConverter:
                 
                 import shutil
                 shutil.copy2(file_path, backup_path)
-                logger.debug("編碼轉換 - 建立備份: %s", backup_path.name)
+                logger.debug("編碼轉換 - 建立備份檔案: %s", backup_path.name)
             
             # 讀取原始內容
             with open(file_path, 'r', encoding=source_encoding, errors='replace') as f:

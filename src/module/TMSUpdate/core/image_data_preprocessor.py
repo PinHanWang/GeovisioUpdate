@@ -47,7 +47,7 @@ class GPSDataPreprocessor:
         self.distance_threshold = distance_threshold
         
         logger.info(
-            "資料預處理 - 初始化完成: 時間閾值=%d 秒, 距離閾值=%.1f 公尺",
+            "資料預處理 - 初始化完成: 影像間隔時間閾值=%d 秒, 影像間隔距離距離閾值=%.1f 公尺",
             time_threshold, distance_threshold
         )
     
@@ -85,7 +85,7 @@ class GPSDataPreprocessor:
             
         except Exception as e:
             logger.error(
-                "資料預處理 - 時間解析失敗: KeyName=%s, 錯誤=%s",
+                "資料預處理 - 時間格式解析失敗: KeyName=%s, 錯誤=%s",
                 keyname, str(e)
             )
             return None
@@ -100,7 +100,7 @@ class GPSDataPreprocessor:
         Returns:
             新增 GPSTime_diff 欄位的 DataFrame
         """
-        logger.debug("資料預處理 - 開始計算時間差")
+        logger.debug("資料預處理 - 開始計算影像間時間差")
         
         # 按時間排序
         df = df.sort_values(by='GPSTime')
@@ -136,7 +136,7 @@ class GPSDataPreprocessor:
         Returns:
             新增 distance_to_prev 欄位的 DataFrame
         """
-        logger.debug("資料預處理 - 開始計算距離差")
+        logger.debug("資料預處理 - 開始計算影像間距離差")
         
         # 建立座標轉換器 (WGS84 → TWD97)
         transformer = Transformer.from_crs(

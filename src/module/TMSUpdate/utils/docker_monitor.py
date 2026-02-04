@@ -136,8 +136,8 @@ class HawserDockerMonitor:
         
         # 啟動通知
         start_msg = (
-            f"🚀 **GeoVisio 效能監控已部署**\n"
-            f"監控目標：`{self.target_ip}:{self.service_port}`\n"
+            f"🚀 **GeoVisio 效能監控**\n"
+            f"監控目標容器：`{self.target_ip}:{self.service_port}`\n"
             f"回報頻率：每 {interval // 60} 分鐘\n"
             f"告警門檻：`> {self.mem_threshold_mb} MB`"
         )
@@ -186,8 +186,8 @@ class HawserDockerMonitor:
                                     mem_info = f"`{mem_usage_mb:.1f}` MB"
                                 
                                 report = (
-                                    f"📊 **定期效能快報**\n"
-                                    f"服務：`GeoVisio (Port {self.service_port})`\n"
+                                    f"📊 **定期容器效能回報**\n"
+                                    f"容器：`GeoVisio (Port {self.service_port})`\n"
                                     f"記憶體：{mem_info}\n"
                                     f"CPU：`{cpu_percent:.1f}%`"
                                 )
@@ -195,7 +195,7 @@ class HawserDockerMonitor:
                                 # 🚨 告警邏輯
                                 if mem_usage_mb > self.mem_threshold_mb:
                                     report = (
-                                        f"🚨 **【緊急告警：記憶體溢出風險】**\n"
+                                        f"🚨 **【緊急：記憶體溢出風險】**\n"
                                         f"目前的記憶體使用量 (`{mem_usage_mb:.1f} MB`) "
                                         f"已超過設定上限 `{self.mem_threshold_mb} MB`！\n"
                                         f"請檢查 {self.target_ip} 伺服器的上傳負載。"
@@ -203,7 +203,7 @@ class HawserDockerMonitor:
                                 
                                 await self.send_to_discord(report)
                                 logger.info(
-                                    "效能數據: 記憶體=%.1f MB, CPU=%.1f%%",
+                                    "容器效能回報: 記憶體=%.1f MB, CPU=%.1f%%",
                                     mem_usage_mb, cpu_percent
                                 )
                                 
