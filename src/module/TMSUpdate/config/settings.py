@@ -117,6 +117,22 @@ class Settings:
     
     # 日期過濾 - 跳過早於此日期的資料 (格式: YYYY-MM-DD)
     CUTOFF_DATE: Optional[str] = os.getenv("CUTOFF_DATE", "2025-06-01")
+
+    # ========================================
+    # Docker & Hawser 資源監控設定 (新增)
+    # ========================================
+    DOCKER_TARGET_IP: str = os.getenv("DOCKER_TARGET_IP", "192.168.61.3")
+    DOCKER_CONTAINER_NAME: str = os.getenv("DOCKER_CONTAINER_NAME", "geovisio_service")
+    # Hawser API 連接埠 (2376)
+    HAWSER_PORT: int = int(os.getenv("HAWSER_PORT", "2376"))
+    
+    # Discord 通知設定
+    DISCORD_BOT_TOKEN: Optional[str] = os.getenv("DISCORD_BOT_TOKEN")
+    DISCORD_CHANNEL_ID: Optional[str] = os.getenv("DISCORD_CHANNEL_ID")
+    
+    # 監控邏輯參數
+    MONITOR_INTERVAL: int = int(os.getenv("MONITOR_INTERVAL", "300")) # 預設 5 分鐘
+    MONITOR_MEM_THRESHOLD_MB: int = int(os.getenv("MONITOR_MEM_THRESHOLD_MB", "3072")) # 3GB 告警
     
 
     
