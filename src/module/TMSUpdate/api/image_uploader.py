@@ -24,24 +24,22 @@ import pandas as pd
 from aiohttp import ClientTimeout
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
 from dotenv import load_dotenv
-
 # 從獨立模組導入異常類別 (避免循環 import)
 try:
     from src.module.TMSUpdate.api.exceptions import (
         ImageAlreadyExistsError,
         RetryableUploadError
     )
+    from src.module.TMSUpdate.config.settings import Settings
 except ImportError:
     from .exceptions import ImageAlreadyExistsError, RetryableUploadError
+    from ..config.settings import Settings
 
 # Type hint 用 (避免循環 import)
 if TYPE_CHECKING:
     from src.module.TMSUpdate.api.geovisio_api_client import GeoVisioAPIClient
 
 logger = logging.getLogger(__name__)
-
-# 載入環境變數
-load_dotenv()
 
 
 # ========================================
@@ -81,18 +79,26 @@ class ImageUploader:
         self.seq_handler = seq_handler
         self.failure_tracker = failure_tracker
         
-        # 環境變數設定
-        self.image_base_path = os.getenv("IMAGE_BASE_PATH")
-        self.max_concurrent = int(os.getenv("MAX_CONCURRENT_UPLOADS", "5"))
-        self.upload_timeout = int(os.getenv("UPLOAD_TIMEOUT", "60"))
+        # 從 Settings 讀取設定 (統一管理)
+        self.image_base_path = Settings.IMAGE_BASE_PATH
+        self.max_concurrent = Settings.MAX_CONCURRENT_UPLOADS
+        self.upload_timeout = Settings.UPLOAD_TIMEOUT
         
         # 功能開關
-        self.enable_deduplication = os.getenv("ENABLE_DEDUPLICATION", "true").lower() == "true"
-        self.enable_md5_check = os.getenv("ENABLE_MD5_CHECK", "true").lower() == "true"
-        self.enable_resource_monitor = os.getenv("ENABLE_RESOURCE_MONITOR", "true").lower() == "true"
+        self.enable_deduplication = Settings.ENABLE_DEDUPLICATION
+        self.enable_md5_check = Settings.ENABLE_MD5_CHECK
+        self.enable_resource_monitor = Settings.ENABLE_RESOURCE_MONITOR
+        
+        # 重試設定
+        self.retry_attempts = Settings.RETRY_ATTEMPTS
+        self.retry_delay = Settings.RETRY_DELAY
+        
+        # 去重失敗行為
+        self.dedup_failure_behavior = Settings.DEDUP_FAILURE_BEHAVIOR
         
         logger.info("影像上傳器 - 初始化完成 (連線複用與流式傳輸模式)")
-        logger.info("影像上傳器 - 並發數限制: %d, 上傳超時: %d 秒", self.max_concurrent, self.upload_timeout)
+        logger.info("影像上傳器 - 並發數: %d, 超時: %d 秒, 重試: %d 次",
+                    self.max_concurrent, self.upload_timeout, self.retry_attempts)
 
     def _log_retry_error(self, retry_state):
         """重試失敗回調函數"""
@@ -161,6 +167,10 @@ class ImageUploader:
                 raise
             except Exception as e:
                 logger.warning("影像上傳 - 去重檢查失敗, KeyName=%s, 錯誤=%s", keyname, str(e))
+                # 根據設定決定失敗時的行為
+                if self.dedup_failure_behavior == "skip":
+                    logger.warning("影像上傳 - 去重失敗策略為 skip，跳過此影像: %s", keyname)
+                    raise ImageAlreadyExistsError(f"去重檢查失敗，保守跳過: {keyname}")
         
         # 2. 準備上傳
         url = f"{self.api_client.base_url}/api/collections/{collection_id}/items"
@@ -225,8 +235,8 @@ class ImageUploader:
         async with semaphore:
             try:
                 upload_with_retry = retry(
-                    stop=stop_after_attempt(3),
-                    wait=wait_fixed(2),
+                    stop=stop_after_attempt(self.retry_attempts),
+                    wait=wait_fixed(self.retry_delay),
                     retry=retry_if_exception_type((RetryableUploadError, asyncio.TimeoutError)),
                     retry_error_callback=self._log_retry_error,
                     reraise=False

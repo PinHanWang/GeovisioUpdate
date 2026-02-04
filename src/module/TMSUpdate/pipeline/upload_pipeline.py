@@ -24,10 +24,12 @@ try:
     from src.module.TMSUpdate.core.csv_encoding_converter import convert_csv_encoding
     from src.module.TMSUpdate.core.image_data_preprocessor import data_preprocessing
     from src.module.TMSUpdate.config.logging_config import LOGGING_CONFIG
+    from src.module.TMSUpdate.config.settings import Settings
 except ImportError:
     from core.csv_encoding_converter import convert_csv_encoding
     from core.image_data_preprocessor import data_preprocessing
     from config.logging_config import LOGGING_CONFIG
+    from config.settings import Settings
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -37,20 +39,25 @@ logger = logging.getLogger(__name__)
 class GeoVisioUploadPipeline:
     def __init__(self):
         """初始化流程管理器"""
-        load_dotenv()
+        # 注意：環境變數由 Settings 模組統一載入，此處不再重複呼叫 load_dotenv()
         
         # ========================================
-        # 載入環境變數
+        # 從 Settings 讀取設定 (統一管理)
         # ========================================
         self.config = {
-            'tms_geovisio_url': os.getenv("TMS_GEOVISIO_URL"),
-            'csv_file_path': os.getenv("CSV_FILE_PATH"),
-            'sequence_delay': int(os.getenv("SEQUENCE_DELAY", "3")),
-            'batch_delay': int(os.getenv("BATCH_DELAY", "300")),
-            'vehicle_type': os.getenv("VEHICLE_TYPE", "CAR"),
-            'enable_deduplication': os.getenv("ENABLE_DEDUPLICATION", "true").lower() == "true",
-            'enable_resource_monitor': os.getenv("ENABLE_RESOURCE_MONITOR", "true").lower() == "true",
-            'max_pool_size': int(os.getenv("MAX_POOL_SIZE", "10"))  # 新增: 連線池限制
+            'tms_geovisio_url': Settings.TMS_GEOVISIO_URL,
+            'csv_file_path': Settings.CSV_FILE_PATH,
+            'sequence_delay': Settings.SEQUENCE_DELAY,
+            'batch_delay': Settings.BATCH_DELAY,
+            'vehicle_type': Settings.VEHICLE_TYPE,
+            'enable_deduplication': Settings.ENABLE_DEDUPLICATION,
+            'enable_resource_monitor': Settings.ENABLE_RESOURCE_MONITOR,
+            'max_pool_size': Settings.MAX_POOL_SIZE,
+            # 新增：連線相關設定
+            'dns_cache_ttl': Settings.DNS_CACHE_TTL,
+            'connect_timeout': Settings.CONNECT_TIMEOUT,
+            'read_timeout': Settings.READ_TIMEOUT,
+            'keepalive_timeout': Settings.KEEPALIVE_TIMEOUT,
         }
         
         # ========================================
@@ -77,24 +84,46 @@ class GeoVisioUploadPipeline:
 
     def validate_env(self) -> None:
         """驗證環境變數"""
-        if self.config['tms_geovisio_url'] is None:
-            raise ValueError("TMS_GEOVISIO_URL 未在環境變數中設定")
-        if self.config['csv_file_path'] is None:
-            raise ValueError("CSV_FILE_PATH 未在環境變數中設定")
+        # 使用 Settings 的驗證方法
+        if not Settings.validate():
+            raise ValueError("必要的環境變數未設定，請檢查 .env 檔案")
         
         logs_dir = Path("logs")
         logs_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 列印目前設定 (方便除錯)
+        Settings.print_config()
         logger.info("流程管理器 - 環境變數驗證通過")
 
     async def initialize_modules(self):
         """初始化各功能模組與全域 Session"""
         logger.info("流程管理器 - 開始初始化模組與 Session")
         
-        # 1. 建立全局連線池 (核心修改)
-        connector = aiohttp.TCPConnector(limit=self.config['max_pool_size'], ttl_dns_cache=300)
+        # 1. 建立全局連線池 (使用 Settings 配置)
+        connector = aiohttp.TCPConnector(
+            limit=self.config['max_pool_size'],
+            ttl_dns_cache=self.config['dns_cache_ttl'],
+            keepalive_timeout=self.config['keepalive_timeout'],
+        )
+        
+        # 設定請求超時
+        timeout = aiohttp.ClientTimeout(
+            total=None,  # 不限制總時間（由單次上傳的 timeout 控制）
+            connect=self.config['connect_timeout'],
+            sock_read=self.config['read_timeout'],
+        )
+        
         self.session = aiohttp.ClientSession(
             connector=connector,
+            timeout=timeout,
             headers={"Accept-Encoding": "gzip, deflate, identity"}
+        )
+        
+        logger.info(
+            "流程管理器 - Session 建立完成: 連線池=%d, DNS快取=%d秒, 連線超時=%d秒",
+            self.config['max_pool_size'],
+            self.config['dns_cache_ttl'],
+            self.config['connect_timeout']
         )
 
         # 2. 初始化 API 客戶端並注入 Session
@@ -196,13 +225,22 @@ class GeoVisioUploadPipeline:
         
         Args:
             collection_date: 要檢查的日期
-            cut_off_date: 截止日期 (預設: 2025-06-01)
+            cut_off_date: 截止日期 (預設從 Settings.CUTOFF_DATE 讀取)
             
         Returns:
             是否跳過
         """
         if cut_off_date is None:
-            cut_off_date = datetime.date(2025, 6, 1)
+            # 從 Settings 讀取截止日期
+            cutoff_str = Settings.CUTOFF_DATE
+            if cutoff_str:
+                try:
+                    cut_off_date = datetime.datetime.strptime(cutoff_str, "%Y-%m-%d").date()
+                except ValueError:
+                    logger.warning("流程管理器 - CUTOFF_DATE 格式錯誤: %s，使用預設值", cutoff_str)
+                    cut_off_date = datetime.date(2025, 6, 1)
+            else:
+                cut_off_date = datetime.date(2025, 6, 1)
         
         skip = collection_date < cut_off_date
         

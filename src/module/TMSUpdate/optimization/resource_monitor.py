@@ -1,19 +1,26 @@
-# src/module/TMSUpdate/resource_monitor.py
+# src/module/TMSUpdate/optimization/resource_monitor.py
 """
-簡化版資源監控 - 基於 Job Queue 積壓情況
+簡化版資源監控 - 基於 Job Queue 積壓情況 (重構版)
 
 監控邏輯:
-- Job Queue 積壓 < 100 筆 → 安全,可以繼續上傳
-- Job Queue 積壓 100-500 筆 → 警告,減慢上傳速度
-- Job Queue 積壓 > 500 筆 → 危險,暫停上傳等待處理
+- Job Queue 積壓 < 安全閾值 → 安全,可以繼續上傳
+- Job Queue 積壓 安全~警告閾值 → 警告,減慢上傳速度
+- Job Queue 積壓 > 警告閾值 → 危險,暫停上傳等待處理
+
+所有閾值現在從 Settings 讀取，可透過環境變數調整
 """
 
 import asyncio
 import logging
 import asyncpg
-import os
 from typing import Optional, Dict, Tuple
 from dotenv import load_dotenv
+
+# 從 settings 讀取配置
+try:
+    from src.module.TMSUpdate.config.settings import Settings
+except ImportError:
+    from config.settings import Settings
 
 logger = logging.getLogger(__name__)
 load_dotenv()
@@ -23,24 +30,27 @@ class ResourceMonitor:
     """
     簡化版資源監控器
     
-    監控邏輯:
-    - Job Queue 積壓 < 100 筆 → 安全,可以繼續上傳
-    - Job Queue 積壓 100-500 筆 → 警告,減慢上傳速度
-    - Job Queue 積壓 > 500 筆 → 危險,暫停上傳等待處理
+    監控邏輯基於 Job Queue 積壓數量，所有閾值從 Settings 讀取
     """
     
     def __init__(
         self,
         db_url: Optional[str] = None,
-        safe_threshold: int = 100,      # 安全閾值
-        warning_threshold: int = 500,   # 警告閾值
-        check_interval: int = 60,
+        safe_threshold: Optional[int] = None,
+        warning_threshold: Optional[int] = None,
+        check_interval: Optional[int] = None,
     ):
-        self.db_url = db_url or os.getenv("DATABASE_URL")
-        self.safe_threshold = safe_threshold
-        self.warning_threshold = warning_threshold
-        self.check_interval = check_interval
+        # 優先使用傳入的參數，否則從 Settings 讀取
+        self.db_url = db_url or Settings.DATABASE_URL
+        self.safe_threshold = safe_threshold or Settings.JOB_QUEUE_SAFE_THRESHOLD
+        self.warning_threshold = warning_threshold or Settings.JOB_QUEUE_WARNING_THRESHOLD
+        self.check_interval = check_interval or Settings.RESOURCE_CHECK_INTERVAL
         self.db_pool = None
+        
+        logger.info(
+            "資源監控 - 配置: 安全閾值=%d, 警告閾值=%d, 檢查間隔=%d秒",
+            self.safe_threshold, self.warning_threshold, self.check_interval
+        )
     
     async def initialize(self):
         """初始化資料庫連線池"""
@@ -96,26 +106,25 @@ class ResourceMonitor:
         
         stats = {
             'job_queue_count': queue_count,
-            'status': 'unknown'
+            'status': 'unknown',
+            'safe_threshold': self.safe_threshold,
+            'warning_threshold': self.warning_threshold
         }
         
         if queue_count < self.safe_threshold:
-            # 安全範圍
             stats['status'] = 'safe'
             is_safe = True
             logger.debug("資源監控 - Job Queue: %d 筆 (安全)", queue_count)
             
         elif queue_count < self.warning_threshold:
-            # 警告範圍
             stats['status'] = 'warning'
-            is_safe = True  # 仍可繼續,但會減速
+            is_safe = True
             logger.warning(
                 "資源監控 - Job Queue 積壓: %d 筆 (建議減慢上傳速度)",
                 queue_count
             )
             
         else:
-            # 危險範圍
             stats['status'] = 'critical'
             is_safe = False
             logger.error(
@@ -136,6 +145,7 @@ class ResourceMonitor:
             是否成功恢復到安全水平
         """
         waited = 0
+        queue_count = 0
         
         while waited < max_wait:
             is_safe, stats = await self.check_resources()
@@ -182,11 +192,9 @@ class ResourceMonitor:
         status = stats['status']
         
         if status == 'safe':
-            # 安全,使用預設值
             return default_size
         
         elif status == 'warning':
-            # 警告,減少 30%
             adjusted_size = max(10, int(default_size * 0.7))
             logger.warning(
                 "資源監控 - Job Queue 積壓 (%d 筆), batch size 調整: %d → %d",
@@ -195,7 +203,6 @@ class ResourceMonitor:
             return adjusted_size
         
         else:  # critical
-            # 危險,減半
             adjusted_size = max(5, default_size // 2)
             logger.error(
                 "資源監控 - Job Queue 嚴重積壓 (%d 筆), batch size 調整: %d → %d",
@@ -224,7 +231,6 @@ class ResourceMonitor:
             return default_delay
         
         elif status == 'warning':
-            # 警告,增加 50% 延遲
             adjusted_delay = int(default_delay * 1.5)
             logger.warning(
                 "資源監控 - 增加批次延遲: %d 秒 → %d 秒",
@@ -233,26 +239,12 @@ class ResourceMonitor:
             return adjusted_delay
         
         else:  # critical
-            # 危險,延遲加倍
             adjusted_delay = default_delay * 2
             logger.error(
                 "資源監控 - 大幅增加批次延遲: %d 秒 → %d 秒",
                 default_delay, adjusted_delay
             )
             return adjusted_delay
-        
-    def __del__(self):
-        """析構函數 - 確保資源釋放"""
-        if self.db_pool and not self.db_pool._closed:
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(self.close())
-                else:
-                    loop.run_until_complete(self.close())
-            except Exception:
-                pass  # 忽略清理錯誤
 
     async def __aenter__(self):
         """支援 async context manager"""
@@ -266,27 +258,20 @@ class ResourceMonitor:
 
 
 # ========================================
-# 全域實例 (單例模式)
+# 全域實例 (單例模式) - 使用 Settings 配置
 # ========================================
-simple_resource_monitor = ResourceMonitor(
-    safe_threshold=100,
-    warning_threshold=500,
-    check_interval=60
-)
+simple_resource_monitor = ResourceMonitor()
 
 
 if __name__ == "__main__":
-    # 測試
     async def test():
         monitor = ResourceMonitor()
         await monitor.initialize()
         
-        # 測試檢查
         is_safe, stats = await monitor.check_resources()
         print(f"系統安全: {is_safe}")
         print(f"統計: {stats}")
         
-        # 測試動態調整
         batch_size = await monitor.get_dynamic_batch_size(50, 1000)
         print(f"調整後的 batch size: {batch_size}")
         

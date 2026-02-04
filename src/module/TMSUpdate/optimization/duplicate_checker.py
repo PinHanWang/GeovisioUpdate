@@ -22,6 +22,7 @@ from typing import Optional, Set, Tuple
 import aiohttp
 import asyncpg
 from dotenv import load_dotenv
+from config.settings import Settings
 
 # 取得日誌器
 logger = logging.getLogger(__name__)
@@ -54,9 +55,9 @@ class DuplicateChecker:
         Args:
             db_url: PostgreSQL 連線字串 (預設從環境變數讀取)
         """
-        self.db_url = db_url or os.getenv("DATABASE_URL")
+        self.db_url = Settings.DATABASE_URL
         self.db_pool = None
-        self.max_cache_size = 100000
+        self.max_cache_size = Settings.DEDUP_MAX_CACHE_SIZE
         # 快取
         self.md5_cache: Set[str] = set()
         self.keyname_cache: Set[str] = set()
@@ -133,7 +134,7 @@ class DuplicateChecker:
                     ) sub
                     LIMIT $1
                     """,
-                    limit
+                    Settings.DEDUP_PRELOAD_LIMIT
                 )
                 
                 # 儲存到快取
