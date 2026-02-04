@@ -299,7 +299,8 @@ class GPSDataPreprocessor:
         # 2. 移除重複的 KeyName
         # ========================================
         original_count = len(df)
-        df_unique = df.drop_duplicates(subset=['KeyName'], keep='first')
+        # 使用 .copy() 建立獨立副本，避免 SettingWithCopyWarning
+        df_unique = df.drop_duplicates(subset=['KeyName'], keep='first').copy()
         duplicate_count = original_count - len(df_unique)
         
         if duplicate_count > 0:
