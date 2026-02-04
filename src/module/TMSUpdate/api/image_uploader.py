@@ -237,7 +237,14 @@ class ImageUploader:
                 upload_with_retry = retry(
                     stop=stop_after_attempt(self.retry_attempts),
                     wait=wait_fixed(self.retry_delay),
-                    retry=retry_if_exception_type((RetryableUploadError, asyncio.TimeoutError)),
+                    retry=retry_if_exception_type((
+                        RetryableUploadError,
+                        asyncio.TimeoutError,
+                        aiohttp.ServerDisconnectedError,  # 伺服器斷線
+                        aiohttp.ClientConnectorError,     # 連線錯誤
+                        aiohttp.ServerTimeoutError,       # 伺服器超時
+                        ConnectionResetError,             # 連線被重置
+                    )),
                     retry_error_callback=self._log_retry_error,
                     reraise=False
                 )(self._upload_single_image_impl)
