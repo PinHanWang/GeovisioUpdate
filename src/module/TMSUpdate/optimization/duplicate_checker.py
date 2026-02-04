@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Optional, Set, Tuple
 import aiohttp
 import asyncpg
-from dotenv import load_dotenv
 
 # 導入設定
 try:
@@ -33,8 +32,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # 載入環境變數
-load_dotenv()
-IMAGE_BASE_PATH = os.getenv("IMAGE_BASE_PATH")
+IMAGE_BASE_PATH = Settings.IMAGE_BASE_PATH
 
 
 class DuplicateChecker:

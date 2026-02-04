@@ -353,12 +353,13 @@ class GPSDataPreprocessor:
         # ========================================
         # 8. 選擇輸出欄位
         # ========================================
-        output_cols = [
-            'KeyName', 'GPSTime', 'GPSTime_diff',
-            'GPS_X', 'GPS_Y', 'distance_to_prev',
-            'group_id', 'speed', 'url'
-        ]
-        
+        required_cols = ['KeyName', 'GPSTime', 'GPSTime_diff', 'GPS_X', 'GPS_Y', 
+                 'distance_to_prev', 'group_id']
+        optional_cols = ['speed', 'url', 'X_TWD97', 'Y_TWD97']
+
+        # 只選取存在的欄位
+        output_cols = required_cols + [col for col in optional_cols if col in df_unique.columns]
+
         df_result = df_unique[output_cols]
         
         logger.info(

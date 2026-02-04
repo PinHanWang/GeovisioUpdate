@@ -15,9 +15,13 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 import aiohttp
 import aiofiles
-from dotenv import load_dotenv
 
 # 從獨立模組導入異常類別
+try:
+    from src.module.TMSUpdate.config.settings import Settings
+except ImportError:
+    from ..config.settings import Settings
+
 try:
     from src.module.TMSUpdate.api.exceptions import (
         ImageAlreadyExistsError,
@@ -27,7 +31,6 @@ except ImportError:
     from .exceptions import ImageAlreadyExistsError, RetryableUploadError
 
 logger = logging.getLogger(__name__)
-load_dotenv()
 
 # ========================================
 # GeoVisio API 客戶端
@@ -139,18 +142,40 @@ class GeoVisioAPIClient:
             logger.info("API 請求 - Collection 已創建: %s", data["id"])
             return data["id"]
         return None
+    
+    async def health_check(self) -> bool:
+        """檢查 GeoVisio API 健康狀態"""
+        try:
+            async with self.session.get(
+                f"{self.base_url}/health",
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as resp:
+                return resp.status == 200
+        except Exception as e:
+            logger.warning("API 健康檢查失敗: %s", str(e))
+            return False
 
 # ========================================
 # 向後相容函數 (修正：這些函數現在應僅作為快速 Entry Point，不建議高頻使用)
 # ========================================
 
 async def _get_compat_client():
-    """內部輔助：建立一個臨時的 Client (注意：這會產生一次性 Session)"""
+    """內部輔助：建立一個臨時的 Client"""
     session = aiohttp.ClientSession()
-    client = GeoVisioAPIClient(base_url=os.getenv("TMS_GEOVISIO_URL"), session=session)
+    client = GeoVisioAPIClient(
+        base_url=Settings.TMS_GEOVISIO_URL,  # 使用 Settings
+        session=session
+    )
     return client, session
 
+import warnings
+
 async def create_collection(title, description, keywords, bbox=None, start_time=None):
+    """向後相容函數 - 建議使用 GeoVisioAPIClient 類別"""
+    warnings.warn(
+        "create_collection() 將在未來版本移除，請使用 GeoVisioAPIClient 類別",
+        DeprecationWarning
+    )
     client, session = await _get_compat_client()
     try:
         return await client.create_collection(title, description, keywords, bbox, start_time)

@@ -14,7 +14,6 @@ import asyncio
 import logging
 import asyncpg
 from typing import Optional, Dict, Tuple
-from dotenv import load_dotenv
 
 # 導入設定
 try:
@@ -23,7 +22,6 @@ except ImportError:
     from ..config.settings import Settings
 
 logger = logging.getLogger(__name__)
-load_dotenv()
 
 
 class ResourceMonitor:

@@ -20,6 +20,12 @@ import logging
 from pathlib import Path
 from typing import Optional, Dict, List, Any, TYPE_CHECKING
 import aiohttp
+from aiohttp import (
+    ClientTimeout,
+    ServerDisconnectedError,
+    ClientConnectorError,
+    ServerTimeoutError,
+)
 import pandas as pd
 from aiohttp import ClientTimeout
 from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
@@ -240,10 +246,10 @@ class ImageUploader:
                     retry=retry_if_exception_type((
                         RetryableUploadError,
                         asyncio.TimeoutError,
-                        aiohttp.ServerDisconnectedError,  # 伺服器斷線
-                        aiohttp.ClientConnectorError,     # 連線錯誤
-                        aiohttp.ServerTimeoutError,       # 伺服器超時
-                        ConnectionResetError,             # 連線被重置
+                        ServerDisconnectedError,
+                        ClientConnectorError,
+                        ServerTimeoutError,
+                        ConnectionResetError,
                     )),
                     retry_error_callback=self._log_retry_error,
                     reraise=False
