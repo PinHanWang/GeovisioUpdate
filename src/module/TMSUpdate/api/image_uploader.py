@@ -96,8 +96,8 @@ class ImageUploader:
         # 去重失敗行為
         self.dedup_failure_behavior = Settings.DEDUP_FAILURE_BEHAVIOR
         
-        logger.info("影像上傳器 - 初始化完成 (連線複用與流式傳輸模式)")
-        logger.info("影像上傳器 - 並發數: %d, 超時: %d 秒, 重試: %d 次",
+        logger.info("影像上傳 - 初始化完成 (連線複用與流式傳輸模式)")
+        logger.info("影像上傳 - 參數設定：併發數量: %d, 超時: %d 秒, 重試: %d 次",
                     self.max_concurrent, self.upload_timeout, self.retry_attempts)
 
     def _log_retry_error(self, retry_state):
@@ -166,11 +166,11 @@ class ImageUploader:
             except ImageAlreadyExistsError:
                 raise
             except Exception as e:
-                logger.warning("影像上傳 - 去重檢查失敗, KeyName=%s, 錯誤=%s", keyname, str(e))
+                logger.warning("影像上傳 - 重複性檢查失敗, KeyName=%s, 錯誤=%s", keyname, str(e))
                 # 根據設定決定失敗時的行為
                 if self.dedup_failure_behavior == "skip":
-                    logger.warning("影像上傳 - 去重失敗策略為 skip，跳過此影像: %s", keyname)
-                    raise ImageAlreadyExistsError(f"去重檢查失敗，保守跳過: {keyname}")
+                    logger.warning("影像上傳 - 重複性檢查失敗策略為 skip，跳過此影像: %s", keyname)
+                    raise ImageAlreadyExistsError(f"重複性檢查失敗，保守跳過: {keyname}")
         
         # 2. 準備上傳
         url = f"{self.api_client.base_url}/api/collections/{collection_id}/items"
@@ -215,7 +215,7 @@ class ImageUploader:
             return True
         except Exception as e:
             if not isinstance(e, (RetryableUploadError, FileNotFoundError, ImageAlreadyExistsError)):
-                logger.error("影像上傳 - 未預期例外: KeyName=%s, 錯誤=%s", keyname, str(e))
+                logger.error("影像上傳 - 其他例外錯誤: KeyName=%s, 錯誤=%s", keyname, str(e))
             raise
 
     async def safe_upload_image(
@@ -272,7 +272,7 @@ class ImageUploader:
         else:
             batch_size, batch_delay = batch_config['batch_size'], batch_config['batch_delay']
         
-        logger.info("影像上傳 - 序列啟動: %d 張, Batch: %d, 並發限制: %d", sequence_size, batch_size, self.max_concurrent)
+        logger.info("影像上傳 - 序列啟動: %d 張, Batch: %d, 併發限制: %d", sequence_size, batch_size, self.max_concurrent)
 
         # 2. 分批處理
         batches = [df.iloc[i:i + batch_size] for i in range(0, len(df), batch_size)]

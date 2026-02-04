@@ -1,5 +1,5 @@
 """
-去重檢查模組 (重構優化版)
+重複性檢查模組 (重構優化版)
 
 功能:
 1. KeyName 檢查 (基於 metadata->>'originalFileName')
@@ -39,9 +39,9 @@ IMAGE_BASE_PATH = os.getenv("IMAGE_BASE_PATH")
 
 class DuplicateChecker:
     """
-    去重檢查器
+    重複性檢查器
     
-    支援兩種去重方式:
+    支援兩種重複性方式:
     1. KeyName 檢查 (快速,基於檔名)
     2. MD5 檢查 (精確,基於檔案內容)
     
@@ -55,7 +55,7 @@ class DuplicateChecker:
     
     def __init__(self, db_url: Optional[str] = None):
         """
-        初始化去重檢查器
+        初始化重複性檢查器
         
         Args:
             db_url: PostgreSQL 連線字串 (預設從環境變數讀取)
@@ -85,7 +85,7 @@ class DuplicateChecker:
             Exception: 資料庫連線失敗
         """
         if not self.db_url:
-            logger.warning("去重檢查 - 未提供資料庫連線,功能將被停用")
+            logger.warning("重複性檢查 - 未提供資料庫連線,功能將被停用")
             return
         
         try:
@@ -96,21 +96,21 @@ class DuplicateChecker:
                 max_size=5,
                 timeout=30
             )
-            logger.info("去重檢查 - 資料庫連線池建立成功")
+            logger.info("重複性檢查 - 資料庫連線池建立成功")
             
             # 載入現有的 KeyName 快取
             await self._load_keyname_cache()
             
         except Exception as e:
-            logger.error("去重檢查 - 資料庫連線失敗: %s", str(e))
-            logger.warning("去重檢查 - 功能將被停用")
+            logger.error("重複性檢查 - 資料庫連線失敗: %s", str(e))
+            logger.warning("重複性檢查 - 功能將被停用")
             self.db_pool = None
     
     async def close(self):
         """關閉資料庫連線池"""
         if self.db_pool:
             await self.db_pool.close()
-            logger.info("去重檢查 - 資料庫連線池已關閉")
+            logger.info("重複性檢查 - 資料庫連線池已關閉")
     
     async def _load_keyname_cache(self, limit: int = 50000):
         """
@@ -145,10 +145,10 @@ class DuplicateChecker:
                 # 儲存到快取
                 self.keyname_cache = {r['filename'] for r in records if r['filename']}
                 
-                logger.info("去重檢查 - 快取載入完成,檔名數量: %d", len(self.keyname_cache))
+                logger.info("重複性檢查 - 快取載入完成,檔名數量: %d", len(self.keyname_cache))
                 
         except Exception as e:
-            logger.error("去重檢查 - 快取載入失敗: %s", str(e))
+            logger.error("重複性檢查 - 快取載入失敗: %s", str(e))
     
     @staticmethod
     def calculate_md5_from_bytes(data: bytes) -> str:
@@ -235,12 +235,12 @@ class DuplicateChecker:
             # 保留最後 80% 的快取（簡易 LRU）
             keep_size = int(self.max_cache_size * 0.8)
             self.md5_cache = set(list(self.md5_cache)[-keep_size:])
-            logger.warning("去重檢查 - MD5 快取已清理: %d 筆", len(self.md5_cache))
+            logger.warning("重複性檢查 - MD5 快取已清理: %d 筆", len(self.md5_cache))
         
         if len(self.keyname_cache) > self.max_cache_size:
             keep_size = int(self.max_cache_size * 0.8)
             self.keyname_cache = set(list(self.keyname_cache)[-keep_size:])
-            logger.warning("去重檢查 - KeyName 快取已清理: %d 筆", len(self.keyname_cache))
+            logger.warning("重複性檢查 - KeyName 快取已清理: %d 筆", len(self.keyname_cache))
 
     async def check_md5_exists(self, md5: str) -> bool:
         """
@@ -260,7 +260,7 @@ class DuplicateChecker:
         # 1. 快取檢查
         if md5 in self.md5_cache:
             self.stats['cache_hits'] += 1
-            logger.debug("去重檢查 - MD5 快取命中: %s...", md5[:8])
+            logger.debug("重複性檢查 - MD5 快取命中: %s...", md5[:8])
             return True
         
         # 2. 資料庫檢查
@@ -282,14 +282,14 @@ class DuplicateChecker:
                 if exists:
                     # 加入快取
                     self.md5_cache.add(md5)
-                    logger.debug("去重檢查 - MD5 資料庫命中: %s...", md5[:8])
+                    logger.debug("重複性檢查 - MD5 資料庫命中: %s...", md5[:8])
                     return True
                 
-                logger.debug("去重檢查 - MD5 不存在: %s...", md5[:8])
+                logger.debug("重複性檢查 - MD5 不存在: %s...", md5[:8])
                 return False
                 
         except Exception as e:
-            logger.error("去重檢查 - MD5 查詢失敗: %s", str(e))
+            logger.error("重複性檢查 - MD5 查詢失敗: %s", str(e))
             return False
     
     async def check_keyname_exists(self, keyname: str) -> bool:
@@ -314,7 +314,7 @@ class DuplicateChecker:
         # 1. 快取檢查
         if filename in self.keyname_cache:
             self.stats['cache_hits'] += 1
-            logger.debug("去重檢查 - KeyName 快取命中: %s", filename)
+            logger.debug("重複性檢查 - KeyName 快取命中: %s", filename)
             return True
         
         # 2. 資料庫檢查
@@ -336,14 +336,14 @@ class DuplicateChecker:
                 if exists:
                     # 加入快取
                     self.keyname_cache.add(filename)
-                    logger.debug("去重檢查 - KeyName 資料庫命中: %s", filename)
+                    logger.debug("重複性檢查 - KeyName 資料庫命中: %s", filename)
                     return True
                 
-                logger.debug("去重檢查 - KeyName 不存在: %s", filename)
+                logger.debug("重複性檢查 - KeyName 不存在: %s", filename)
                 return False
                 
         except Exception as e:
-            logger.error("去重檢查 - KeyName 查詢失敗: %s", str(e))
+            logger.error("重複性檢查 - KeyName 查詢失敗: %s", str(e))
             return False
     
     async def should_skip_upload(
@@ -377,7 +377,7 @@ class DuplicateChecker:
         if await self.check_keyname_exists(keyname):
             self.stats['duplicates_keyname'] += 1
             reason = f"檔名重複: {keyname}.jpg"
-            logger.info("去重檢查 - 跳過上傳: %s", reason)
+            logger.info("重複性檢查 - 跳過上傳: %s", reason)
             return (True, reason)
         
         # ========================================
@@ -412,17 +412,17 @@ class DuplicateChecker:
                 if await self.check_md5_exists(md5):
                     self.stats['duplicates_md5'] += 1
                     reason = f"MD5 重複: {md5[:8]}..."
-                    logger.info("去重檢查 - 跳過上傳: %s", reason)
+                    logger.info("重複性檢查 - 跳過上傳: %s", reason)
                     return (True, reason)
             else:
                 # MD5 計算失敗,記錄但不阻止上傳
                 self.stats['md5_skipped'] += 1
-                logger.warning("去重檢查 - MD5 計算失敗,KeyName: %s (仍會繼續上傳)", keyname)
+                logger.warning("重複性檢查 - MD5 計算失敗,KeyName: %s (仍會繼續上傳)", keyname)
         
         # ========================================
         # 3. 不重複,可以上傳
         # ========================================
-        logger.debug("去重檢查 - 可上傳: %s", keyname)
+        logger.debug("重複性檢查 - 可上傳: %s", keyname)
         return (False, "可上傳")
     
     def get_stats(self) -> dict:
@@ -443,7 +443,7 @@ class DuplicateChecker:
         stats = self.get_stats()
         
         logger.info("=" * 80)
-        logger.info("去重檢查統計報告")
+        logger.info("重複性檢查統計報告")
         logger.info("=" * 80)
         logger.info("%-30s: %10d", "檢查總數", stats['checked'])
         logger.info("%-30s: %10d", "KeyName 重複", stats['duplicates_keyname'])
@@ -466,7 +466,7 @@ class DuplicateChecker:
             'md5_calculated': 0,
             'md5_skipped': 0
         }
-        logger.info("去重檢查 - 統計資訊已重置")
+        logger.info("重複性檢查 - 統計資訊已重置")
 
 
 # ========================================
@@ -477,7 +477,7 @@ _duplicate_checker_instance = None
 
 def get_duplicate_checker() -> DuplicateChecker:
     """
-    取得全域去重檢查器實例
+    取得全域重複性檢查器實例
     
     Returns:
         DuplicateChecker 實例

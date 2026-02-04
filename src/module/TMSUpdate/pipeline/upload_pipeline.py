@@ -1,5 +1,5 @@
 """
-GeoVisio 上傳流程管理器 (重構優化版)
+GeoVisio 上傳流程管理 (重構優化版)
 
 優化重點:
 1. 全域 Session 管理: 統一初始化並注入子模組,解決連線池洩漏問題。
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 class GeoVisioUploadPipeline:
     def __init__(self):
-        """初始化流程管理器"""
+        """初始化流程管理"""
         # 注意：環境變數由 Settings 模組統一載入，此處不再重複呼叫 load_dotenv()
         
         # ========================================
@@ -80,7 +80,7 @@ class GeoVisioUploadPipeline:
             'failed_sequences': 0
         }
         
-        logger.info("流程管理器 - 初始化完成")
+        logger.info("流程管理 - 初始化完成")
 
     def validate_env(self) -> None:
         """驗證環境變數"""
@@ -93,11 +93,11 @@ class GeoVisioUploadPipeline:
         
         # 列印目前設定 (方便除錯)
         Settings.print_config()
-        logger.info("流程管理器 - 環境變數驗證通過")
+        logger.info("流程管理 - 環境變數驗證通過")
 
     async def initialize_modules(self):
         """初始化各功能模組與全域 Session"""
-        logger.info("流程管理器 - 開始初始化模組與 Session")
+        logger.info("流程管理 - 開始初始化模組與 Session")
         
         # 1. 建立全局連線池 (使用 Settings 配置)
         connector = aiohttp.TCPConnector(
@@ -120,7 +120,7 @@ class GeoVisioUploadPipeline:
         )
         
         logger.info(
-            "流程管理器 - Session 建立完成: 連線池=%d, DNS快取=%d秒, 連線超時=%d秒",
+            "流程管理 - Session 建立完成: 連線池=%d, DNS快取=%d秒, 連線超時=%d秒",
             self.config['max_pool_size'],
             self.config['dns_cache_ttl'],
             self.config['connect_timeout']
@@ -186,7 +186,7 @@ class GeoVisioUploadPipeline:
             failure_tracker=self.failure_tracker
         )
         
-        logger.info("流程管理器 - 所有模組初始化完成")
+        logger.info("流程管理 - 所有模組初始化完成")
 
     async def process_csv_file(self, csv_path: Path) -> pd.DataFrame:
         """處理 CSV 檔案並進行前處理"""
@@ -194,7 +194,7 @@ class GeoVisioUploadPipeline:
         if not csv_path.exists():
             raise FileNotFoundError(f"CSV 檔案不存在: {csv_path}")
 
-        logger.info("流程管理器 - 開始前處理 CSV: %s", csv_path)
+        logger.info("流程管理 - 開始前處理 CSV: %s", csv_path)
         v_type = self.config['vehicle_type']
         
         # 根據運具類型動態調整參數
@@ -237,7 +237,7 @@ class GeoVisioUploadPipeline:
                 try:
                     cut_off_date = datetime.datetime.strptime(cutoff_str, "%Y-%m-%d").date()
                 except ValueError:
-                    logger.warning("流程管理器 - CUTOFF_DATE 格式錯誤: %s，使用預設值", cutoff_str)
+                    logger.warning("流程管理 - CUTOFF_DATE 格式錯誤: %s，使用預設值", cutoff_str)
                     cut_off_date = datetime.date(2025, 6, 1)
             else:
                 cut_off_date = datetime.date(2025, 6, 1)
@@ -246,7 +246,7 @@ class GeoVisioUploadPipeline:
         
         if skip:
             logger.info(
-                "流程管理器 - 跳過日期: %s (早於 %s)",
+                "流程管理 - 跳過日期: %s (早於 %s)",
                 collection_date, cut_off_date
             )
         
@@ -261,12 +261,12 @@ class GeoVisioUploadPipeline:
         total_seq: int
     ) -> Optional[str]:
         """上傳單個序列"""
-        logger.info("流程管理器 - 處理序列 %d/%d: ID=%s, 日期=%s", seq_count, total_seq, seq_id, collection_date)
+        logger.info("流程管理 - 處理序列 %d/%d: ID=%s, 日期=%s", seq_count, total_seq, seq_id, collection_date)
         
         # 1. 排序
         seq_sorted_data = seq_data.sort_values(by='GPSTime')
         if seq_sorted_data.empty:
-            logger.error("流程管理器 - 序列資料為空, 跳過: ID=%s", seq_id)
+            logger.error("流程管理 - 序列資料為空, 跳過: ID=%s", seq_id)
             return None
 
         # --- 核心修改：解決 Timestamp 序列化失敗問題 ---
@@ -293,7 +293,7 @@ class GeoVisioUploadPipeline:
         uploaded_result = await self.uploader.upload_sequence(upload_df, collection_id)
         
         if uploaded_result and uploaded_result.get("successful", 0) > 0:
-            logger.info("流程管理器 - 序列上傳成功: ID=%s, 成功=%d", seq_id, uploaded_result["successful"])
+            logger.info("流程管理 - 序列上傳成功: ID=%s, 成功=%d", seq_id, uploaded_result["successful"])
             return collection_id
         
         return None
@@ -313,7 +313,7 @@ class GeoVisioUploadPipeline:
         Returns:
             上傳結果統計
         """
-        logger.info("流程管理器 - 處理日期: %s", collection_date)
+        logger.info("流程管理 - 處理日期: %s", collection_date)
         
         # 檢查是否跳過
         if self.should_skip_date(collection_date):
@@ -333,7 +333,7 @@ class GeoVisioUploadPipeline:
         total_seq = len(seq_data_groups)
         
         if total_seq == 0:
-            logger.warning("流程管理器 - 無序列資料: %s", collection_date)
+            logger.warning("流程管理 - 無序列資料: %s", collection_date)
             return {
                 "date": collection_date,
                 "total_seq": 0,
@@ -341,7 +341,7 @@ class GeoVisioUploadPipeline:
                 "failed_seq": 0
             }
         
-        logger.info("流程管理器 - 日期 %s 共有 %d 個序列", collection_date, total_seq)
+        logger.info("流程管理 - 日期 %s 共有 %d 個序列", collection_date, total_seq)
         
         # 上傳所有序列
         successful_seq = 0
@@ -364,7 +364,7 @@ class GeoVisioUploadPipeline:
             
             except Exception as e:
                 logger.error(
-                    "流程管理器 - 序列處理錯誤: ID=%s, 日期=%s, 錯誤=%s",
+                    "流程管理 - 序列處理錯誤: ID=%s, 日期=%s, 錯誤=%s",
                     seq_id, collection_date, str(e),
                     exc_info=True
                 )
@@ -378,7 +378,7 @@ class GeoVisioUploadPipeline:
         }
         
         logger.info(
-            "流程管理器 - 日期完成: %s, 成功=%d/%d",
+            "流程管理 - 日期完成: %s, 成功=%d/%d",
             collection_date, successful_seq, total_seq
         )
         
@@ -396,18 +396,18 @@ class GeoVisioUploadPipeline:
             processed_data = await self.process_csv_file(csv_path)
             
             if processed_data.empty:
-                logger.warning("流程管理器 - 無資料需處理")
+                logger.warning("流程管理 - 無資料需處理")
                 return
 
             grouped_data = self.group_by_date(processed_data)
             num_dates = len(grouped_data)
             self.stats['total_dates'] = num_dates
             
-            logger.info("流程管理器 - 開始處理 %d 個日期組", num_dates)
+            logger.info("流程管理 - 開始處理 %d 個日期組", num_dates)
             
             date_results = []
             for date_count, (collection_date, group) in enumerate(grouped_data, 1):
-                logger.info("流程管理器 - 處理進度 [%d/%d]: %s", date_count, num_dates, collection_date)
+                logger.info("流程管理 - 處理進度 [%d/%d]: %s", date_count, num_dates, collection_date)
                 
                 try:
                     result = await self.upload_date_group(collection_date, group)
@@ -439,7 +439,7 @@ class GeoVisioUploadPipeline:
 
     async def cleanup(self):
         """清理所有資源 (核心修改)"""
-        logger.info("流程管理器 - 開始清理資源")
+        logger.info("流程管理 - 開始清理資源")
         try:
             if self.dedup_checker:
                 await self.dedup_checker.close()
@@ -448,10 +448,10 @@ class GeoVisioUploadPipeline:
             # 關閉全局 Session
             if self.session:
                 await self.session.close()
-                logger.info("流程管理器 - 全域 Session 已關閉")
+                logger.info("流程管理 - 全域 Session 已關閉")
         except Exception as e:
             logger.error("清理資源時發生異常: %s", str(e))
-        logger.info("流程管理器 - 資源清理完成")
+        logger.info("流程管理 - 資源清理完成")
 
     # 其餘輔助方法 (save_reports, print_final_summary 等) 保持邏輯不變 ...
     def print_final_summary(self):
@@ -497,13 +497,13 @@ class GeoVisioUploadPipeline:
                 results_df = pd.DataFrame(date_results)
                 results_path = Path("logs") / f"{timestamp}_processing_results.csv"
                 results_df.to_csv(results_path, index=False, encoding='utf-8-sig')
-                logger.info("流程管理器 - 處理結果已儲存: %s", results_path)
+                logger.info("流程管理 - 處理結果已儲存: %s", results_path)
             except Exception as e:
-                logger.error("流程管理器 - 儲存處理結果失敗: %s", str(e))
+                logger.error("流程管理 - 儲存處理結果失敗: %s", str(e))
         
         # ========================================
         # 3. 記錄執行時間
         # ========================================
         if self.stats['start_time'] and self.stats['end_time']:
             elapsed_time = self.stats['end_time'] - self.stats['start_time']
-            logger.info("流程管理器 - 總執行時間: %.2f 秒", elapsed_time)
+            logger.info("流程管理 - 總執行時間: %.2f 秒", elapsed_time)
