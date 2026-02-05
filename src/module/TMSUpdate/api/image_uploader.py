@@ -72,6 +72,7 @@ RETRYABLE_EXCEPTIONS = (
     ConnectionResetError,
     ClientOSError,  # 包含更多網路錯誤
     OSError,  # 底層網路錯誤
+    )
 # image_uploader.py
 
 import gc
