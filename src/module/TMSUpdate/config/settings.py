@@ -59,7 +59,9 @@ class Settings:
     # ========================================
     # 重試設定 (新增) <-- 插入位置 2
     # ========================================
-    RETRY_ATTEMPTS: int = int(os.getenv("RETRY_ATTEMPTS", "3"))
+    RETRY_ATTEMPTS: int = int(os.getenv("RETRY_ATTEMPTS", "5"))  # 從 3 改為 5
+    RETRY_MIN_WAIT: int = int(os.getenv("RETRY_MIN_WAIT", "1"))  # 最小等待秒數
+    RETRY_MAX_WAIT: int = int(os.getenv("RETRY_MAX_WAIT", "30"))  # 最大等待秒數
     RETRY_DELAY: int = int(os.getenv("RETRY_DELAY", "2"))
 
     # ========================================

@@ -27,8 +27,23 @@ from aiohttp import (
     ServerTimeoutError,
 )
 import pandas as pd
-from aiohttp import ClientTimeout
-from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+from aiohttp import (
+    ClientTimeout,
+    ServerDisconnectedError,
+    ClientConnectorError,
+    ServerTimeoutError,
+    ClientOSError,  # 新增
+    ClientResponseError,  # 新增
+)
+from tenacity import (
+    retry, 
+    stop_after_attempt, 
+    wait_exponential,  # 改用指數退避
+    wait_random_exponential,  # 或隨機指數退避
+    retry_if_exception_type,
+    before_sleep_log,  # 重試前記錄日誌
+    RetryError
+)
 from dotenv import load_dotenv
 # 從獨立模組導入異常類別 (避免循環 import)
 try:
@@ -47,6 +62,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+RETRYABLE_EXCEPTIONS = (
+    RetryableUploadError,
+    asyncio.TimeoutError,
+    ServerDisconnectedError,
+    ClientConnectorError,
+    ServerTimeoutError,
+    ConnectionResetError,
+    ClientOSError,  # 包含更多網路錯誤
+    OSError,  # 底層網路錯誤
+)
 
 # ========================================
 # 影像上傳管理器
@@ -97,6 +123,8 @@ class ImageUploader:
         
         # 重試設定
         self.retry_attempts = Settings.RETRY_ATTEMPTS
+        self.retry_min_wait = getattr(Settings, 'RETRY_MIN_WAIT', 1)  # 最小等待 1 秒
+        self.retry_max_wait = getattr(Settings, 'RETRY_MAX_WAIT', 30)  # 最大等待 30 秒
         self.retry_delay = Settings.RETRY_DELAY
         
         # 去重失敗行為
@@ -138,16 +166,14 @@ class ImageUploader:
         session: aiohttp.ClientSession,
         collection_id: str,
         keyname: str,
-        gps_time: Any, # 這裡改為 Any 因為傳進來的可能是 Timestamp 物件
+        gps_time: Any,
         gps_x: float,
         gps_y: float,
         speed: float,
         img_url: str,
         seq: int
     ) -> bool:
-        """
-        上傳單張影像的實際實現 (採用流式傳輸)
-        """
+        """上傳單張影像的實際實現"""
         # --- 新增：處理 Pandas Timestamp 序列化問題 ---
         formatted_gps_time = gps_time
         if hasattr(gps_time, 'isoformat'):
@@ -190,7 +216,6 @@ class ImageUploader:
                 form_data = aiohttp.FormData()
                 form_data.add_field("position", str(seq))
                 form_data.add_field("isBlurred", "true")
-                # 使用處理過的字串格式 formatted_gps_time
                 form_data.add_field("override_capture_time", formatted_gps_time)
                 form_data.add_field("override_latitude", str(gps_y))
                 form_data.add_field("override_longitude", str(gps_x))
@@ -203,26 +228,55 @@ class ImageUploader:
                 )
 
                 timeout = ClientTimeout(total=self.upload_timeout)
+                
                 async with session.post(url, data=form_data, timeout=timeout) as resp:
                     if resp.status in [200, 201, 202]:
                         logger.debug("影像上傳 - 成功: KeyName=%s", keyname)
                         return True
                     elif resp.status == 409:
                         error_text = await resp.text()
-                        logger.warning("影像上傳 - 影像已存在 (409): KeyName=%s", keyname)
+                        logger.info("影像上傳 - 影像已存在 (409): KeyName=%s", keyname)
                         raise ImageAlreadyExistsError(f"影像已存在: {error_text}")
-                    else:
+                    elif resp.status >= 500:
+                        # 伺服器錯誤，應該重試
                         error_text = await resp.text()
-                        error_msg = f"上傳失敗: 狀態碼={resp.status}, 錯誤={error_text}"
-                        logger.warning("影像上傳 - KeyName=%s, %s", keyname, error_msg)
-                        raise RetryableUploadError(error_msg)
+                        raise RetryableUploadError(
+                            f"伺服器錯誤 (HTTP {resp.status}): {error_text[:200]}"
+                        )
+                    else:
+                        # 4xx 客戶端錯誤（除了 409），不應重試
+                        error_text = await resp.text()
+                        logger.error(
+                            "影像上傳 - 客戶端錯誤 (不重試): KeyName=%s, HTTP %d, %s",
+                            keyname, resp.status, error_text[:200]
+                        )
+                        return False
 
         except ImageAlreadyExistsError:
-            return True
+            raise  # 直接拋出，讓上層處理
+        
+        except (ServerDisconnectedError, ClientConnectorError, 
+                ServerTimeoutError, asyncio.TimeoutError,
+                ConnectionResetError, ClientOSError, OSError) as e:
+            # ✅ 網路相關錯誤，記錄後重新拋出以觸發重試
+            logger.warning(
+                "影像上傳 - 網路錯誤 (將重試): KeyName=%s, 類型=%s, 錯誤=%s",
+                keyname, type(e).__name__, str(e)
+            )
+            raise RetryableUploadError(f"網路錯誤: {type(e).__name__} - {str(e)}")
+        
+        except FileNotFoundError:
+            raise  # 檔案不存在，不重試
+        
         except Exception as e:
-            if not isinstance(e, (RetryableUploadError, FileNotFoundError, ImageAlreadyExistsError)):
-                logger.error("影像上傳 - 其他例外錯誤: KeyName=%s, 錯誤=%s", keyname, str(e))
-            raise
+            # 其他未預期錯誤，記錄完整資訊
+            logger.error(
+                "影像上傳 - 未預期例外: KeyName=%s, 類型=%s, 錯誤=%s",
+                keyname, type(e).__name__, str(e),
+                exc_info=True  # 包含完整 traceback
+            )
+            # 將未知錯誤也包裝成可重試（保守策略）
+            raise RetryableUploadError(f"未預期錯誤: {type(e).__name__} - {str(e)}")
 
     async def safe_upload_image(
         self,
@@ -237,22 +291,21 @@ class ImageUploader:
         img_url: str,
         seq: int
     ) -> bool:
-        """安全上傳影像 (並發控制與重試)"""
+        """安全上傳影像（增強版重試機制）"""
         async with semaphore:
             try:
+                # 使用指數退避策略：1s, 2s, 4s, 8s, 16s...（上限 30s）
                 upload_with_retry = retry(
                     stop=stop_after_attempt(self.retry_attempts),
-                    wait=wait_fixed(self.retry_delay),
-                    retry=retry_if_exception_type((
-                        RetryableUploadError,
-                        asyncio.TimeoutError,
-                        ServerDisconnectedError,
-                        ClientConnectorError,
-                        ServerTimeoutError,
-                        ConnectionResetError,
-                    )),
-                    retry_error_callback=self._log_retry_error,
-                    reraise=False
+                    wait=wait_exponential(
+                        multiplier=1,
+                        min=self.retry_min_wait,
+                        max=self.retry_max_wait
+                    ),
+                    retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
+                    before_sleep=self._log_retry_attempt,  # 重試前記錄
+                    retry_error_callback=self._log_retry_exhausted,  # 重試用盡時記錄
+                    reraise=False  # 不重新拋出，讓 callback 處理
                 )(self._upload_single_image_impl)
                 
                 result = await upload_with_retry(
@@ -260,12 +313,69 @@ class ImageUploader:
                     gps_x, gps_y, speed, img_url, seq
                 )
                 return True if result else False
+                
             except ImageAlreadyExistsError:
                 return True
             except Exception as e:
-                logger.error("影像上傳 - 流程錯誤: %s, 錯誤=%s", keyname, str(e))
+                # 只有非重試類型的異常才會到這裡
+                logger.error(
+                    "影像上傳 - 非預期錯誤 (非網路問題): KeyName=%s, 類型=%s, 錯誤=%s",
+                    keyname, type(e).__name__, str(e)
+                )
                 return False
 
+    def _log_retry_attempt(self, retry_state):
+        """重試前記錄日誌"""
+        exception = retry_state.outcome.exception()
+        attempt = retry_state.attempt_number
+        wait_time = retry_state.next_action.sleep if retry_state.next_action else 0
+        
+        # 嘗試從 args 取得 keyname
+        keyname = "Unknown"
+        if hasattr(retry_state, 'args') and len(retry_state.args) >= 3:
+            keyname = retry_state.args[2]
+        
+        logger.warning(
+            "影像上傳 - 重試中: KeyName=%s, 第 %d 次嘗試, 等待 %.1f 秒, 錯誤類型=%s",
+            keyname, attempt, wait_time, type(exception).__name__
+        )
+
+    def _log_retry_exhausted(self, retry_state):
+        """重試用盡時的回調"""
+        exception = retry_state.outcome.exception() if retry_state.outcome else None
+        
+        # 嘗試從 args 取得資訊
+        keyname = "Unknown"
+        collection_id = "Unknown"
+        if hasattr(retry_state, 'args') and len(retry_state.args) >= 3:
+            collection_id = retry_state.args[1]
+            keyname = retry_state.args[2]
+        
+        error_msg = str(exception) if exception else "Unknown error"
+        error_type = type(exception).__name__ if exception else "Unknown"
+        
+        # 409 或已存在錯誤視為成功
+        if exception and isinstance(exception, ImageAlreadyExistsError):
+            logger.info("影像上傳 - 影像已存在，視為成功: KeyName=%s", keyname)
+            return True  # 返回成功
+        
+        logger.error(
+            "影像上傳 - 重試用盡: KeyName=%s, 嘗試次數=%d, 錯誤類型=%s, 錯誤=%s",
+            keyname, retry_state.attempt_number, error_type, error_msg
+        )
+        
+        # 記錄到失敗追蹤器
+        if self.failure_tracker:
+            self.failure_tracker.record_upload_failure(
+                keyname=keyname,
+                collection_id=collection_id,
+                error=f"[{error_type}] {error_msg}",
+                retry_count=retry_state.attempt_number
+            )
+            self.failure_tracker.record_collection_failure(collection_id)
+        
+        return False  # 返回失敗
+    
     async def upload_sequence(self, df: pd.DataFrame, collection_id: str) -> Dict[str, int]:
         """上傳完整序列 (整合資源管理與批次清理)"""
         if df.empty:

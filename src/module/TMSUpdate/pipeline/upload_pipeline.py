@@ -102,21 +102,26 @@ class GeoVisioUploadPipeline:
         # 1. 建立全局連線池 (使用 Settings 配置)
         connector = aiohttp.TCPConnector(
             limit=self.config['max_pool_size'],
+            limit_per_host=10,  # 新增：每個主機的連線上限
             ttl_dns_cache=self.config['dns_cache_ttl'],
             keepalive_timeout=self.config['keepalive_timeout'],
+            enable_cleanup_closed=True,  # 新增：清理已關閉的連線
+            force_close=False,  # 保持連線重用
         )
         
-        # 設定請求超時
+        # 設定更寬鬆的超時
         timeout = aiohttp.ClientTimeout(
-            total=None,  # 不限制總時間（由單次上傳的 timeout 控制）
+            total=None,
             connect=self.config['connect_timeout'],
             sock_read=self.config['read_timeout'],
+            sock_connect=self.config['connect_timeout'],  # 新增
         )
         
         self.session = aiohttp.ClientSession(
             connector=connector,
             timeout=timeout,
-            headers={"Accept-Encoding": "gzip, deflate, identity"}
+            headers={"Accept-Encoding": "gzip, deflate, identity"},
+            raise_for_status=False,  # 不自動拋出 HTTP 錯誤，讓我們手動處理
         )
         
         logger.info(
