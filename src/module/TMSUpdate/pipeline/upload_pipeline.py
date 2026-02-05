@@ -459,7 +459,7 @@ class GeoVisioUploadPipeline:
         self.print_final_summary()
         
         # 2. 儲存報告（即使是部分完成的）
-        await self.save_reports(self.date_results)
+        await self.save_reports(self.data_results)
         
         # 3. 清理資源
         await self.cleanup()
