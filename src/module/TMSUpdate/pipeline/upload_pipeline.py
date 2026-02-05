@@ -79,7 +79,8 @@ class GeoVisioUploadPipeline:
             'successful_sequences': 0,
             'failed_sequences': 0
         }
-        
+        self.data_results: List[Dict] = []
+
         logger.info("流程管理 - 初始化完成")
 
     def validate_env(self) -> None:
@@ -411,14 +412,14 @@ class GeoVisioUploadPipeline:
             
             logger.info("流程管理 - 開始處理 %d 個日期組", num_dates)
             
-            date_results = []
+            self.data_results = []
             for date_count, (collection_date, group) in enumerate(grouped_data, 1):
                 logger.info("流程管理 - 處理進度 [%d/%d]: %s", date_count, num_dates, collection_date)
                 
                 try:
                     result = await self.upload_date_group(collection_date, group)
                     if result:
-                        date_results.append(result)
+                        self.data_results.append(result)
                         self.stats['total_sequences'] += result.get('total_seq', 0)
                         self.stats['successful_sequences'] += result.get('successful_seq', 0)
                         self.stats['failed_sequences'] += result.get('failed_seq', 0)
@@ -430,18 +431,40 @@ class GeoVisioUploadPipeline:
                     if date_count < num_dates:
                         await asyncio.sleep(self.config['batch_delay'])
                 
+                except asyncio.CancelledError:
+                    logger.warning("流程管理 - 收到取消訊號，準備儲存進度...")
+                    raise
                 except Exception as e:
                     logger.error("日期 %s 處理中斷: %s", collection_date, str(e))
 
-            self.print_final_summary()
-            await self.save_reports(date_results)
-        
+        except asyncio.CancelledError:
+            logger.warning("流程管理 - 任務被取消")
+            raise
         except Exception as e:
             logger.error("流程發生嚴重錯誤: %s", str(e), exc_info=True)
             raise
         finally:
-            await self.cleanup()
             self.stats['end_time'] = time.time()
+            await self._finalize()
+
+    async def _finalize(self):
+        """
+        最終處理（無論成功或失敗都會執行）
+        
+        包含：列印摘要、儲存報告、清理資源
+        """
+        logger.info("流程管理 - 開始最終處理...")
+        
+        # 1. 列印統計摘要
+        self.print_final_summary()
+        
+        # 2. 儲存報告（即使是部分完成的）
+        await self.save_reports(self.date_results)
+        
+        # 3. 清理資源
+        await self.cleanup()
+        
+        logger.info("流程管理 - 最終處理完成")
 
     async def cleanup(self):
         """
