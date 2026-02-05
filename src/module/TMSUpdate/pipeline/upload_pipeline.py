@@ -212,6 +212,7 @@ class GeoVisioUploadPipeline:
             raise KeyError("DataFrame 找不到 'GPSTime' 欄位")
         
         # 使用 normalize() 較省資源且穩定
+        df = df.copy()
         df['GPSTime'] = pd.to_datetime(df['GPSTime'], errors='coerce')
         df['Date'] = df['GPSTime'].dt.date
         return df.groupby('Date')
@@ -438,20 +439,60 @@ class GeoVisioUploadPipeline:
             self.stats['end_time'] = time.time()
 
     async def cleanup(self):
-        """清理所有資源 (核心修改)"""
+        """
+        清理所有資源（健壯版）
+        
+        確保每個資源都嘗試清理，即使某個失敗也不影響其他資源。
+        """
         logger.info("流程管理 - 開始清理資源")
-        try:
-            if self.dedup_checker:
-                await self.dedup_checker.close()
-            if self.resource_monitor:
-                await self.resource_monitor.close()
-            # 關閉全局 Session
-            if self.session:
-                await self.session.close()
-                logger.info("流程管理 - 全域 Session 已關閉")
-        except Exception as e:
-            logger.error("清理資源時發生異常: %s", str(e))
-        logger.info("流程管理 - 資源清理完成")
+        
+        # 定義需要清理的資源列表
+        cleanup_tasks = [
+            ("去重檢查器", self.dedup_checker, "close"),
+            ("資源監控器", self.resource_monitor, "close"),
+            ("全域 Session", self.session, "close"),
+        ]
+        
+        errors = []
+        
+        for name, obj, method_name in cleanup_tasks:
+            if obj is None:
+                continue
+            
+            try:
+                method = getattr(obj, method_name, None)
+                if method is None:
+                    logger.warning("流程管理 - %s 沒有 %s 方法", name, method_name)
+                    continue
+                
+                # 判斷是否為協程
+                if asyncio.iscoroutinefunction(method):
+                    await method()
+                else:
+                    method()
+                
+                logger.debug("流程管理 - %s 清理成功", name)
+                
+            except Exception as e:
+                errors.append((name, e))
+                logger.error("流程管理 - %s 清理失敗: %s", name, str(e))
+        
+        # 清理完成後的摘要
+        if errors:
+            logger.warning(
+                "流程管理 - 資源清理完成，但有 %d 個錯誤: %s",
+                len(errors),
+                ", ".join(name for name, _ in errors)
+            )
+        else:
+            logger.info("流程管理 - 所有資源清理完成")
+        
+        # 重置引用
+        self.dedup_checker = None
+        self.resource_monitor = None
+        self.session = None
+        self.api_client = None
+        self.uploader = None
 
     # 其餘輔助方法 (save_reports, print_final_summary 等) 保持邏輯不變 ...
     def print_final_summary(self):

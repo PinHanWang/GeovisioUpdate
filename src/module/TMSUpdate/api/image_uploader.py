@@ -48,6 +48,107 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# image_uploader.py
+
+import gc
+import psutil  # 需要安裝：pip install psutil
+import asyncio
+import logging
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+class MemoryAwareGC:
+    """
+    記憶體感知的 GC 管理器
+    
+    只在記憶體使用率超過閾值時才觸發 GC，
+    並且限制 GC 頻率避免過度呼叫。
+    """
+    
+    def __init__(
+        self,
+        memory_threshold_percent: float = 75.0,
+        min_interval_seconds: float = 30.0
+    ):
+        """
+        Args:
+            memory_threshold_percent: 記憶體使用率閾值（超過才觸發 GC）
+            min_interval_seconds: 兩次 GC 之間的最小間隔
+        """
+        self.memory_threshold = memory_threshold_percent
+        self.min_interval = min_interval_seconds
+        self._last_gc_time: float = 0
+        self._gc_count: int = 0
+    
+    def should_collect(self) -> bool:
+        """判斷是否應該執行 GC"""
+        import time
+        
+        # 檢查時間間隔
+        current_time = time.time()
+        if current_time - self._last_gc_time < self.min_interval:
+            return False
+        
+        # 檢查記憶體使用率
+        try:
+            memory_percent = psutil.virtual_memory().percent
+            return memory_percent > self.memory_threshold
+        except Exception:
+            # psutil 失敗時，使用保守策略（不觸發）
+            return False
+    
+    def collect_if_needed(self, force: bool = False) -> bool:
+        """
+        按需執行 GC
+        
+        Args:
+            force: 是否強制執行（忽略閾值檢查）
+            
+        Returns:
+            是否實際執行了 GC
+        """
+        import time
+        
+        if not force and not self.should_collect():
+            return False
+        
+        # 執行 GC
+        collected = gc.collect()
+        self._last_gc_time = time.time()
+        self._gc_count += 1
+        
+        try:
+            memory_percent = psutil.virtual_memory().percent
+            logger.info(
+                "記憶體管理 - GC 執行完成: 回收 %d 物件, 目前記憶體使用率 %.1f%%",
+                collected, memory_percent
+            )
+        except Exception:
+            logger.info("記憶體管理 - GC 執行完成: 回收 %d 物件", collected)
+        
+        return True
+    
+    def get_stats(self) -> dict:
+        """取得統計資訊"""
+        try:
+            mem = psutil.virtual_memory()
+            return {
+                'gc_count': self._gc_count,
+                'memory_percent': mem.percent,
+                'memory_available_mb': mem.available / (1024 * 1024),
+            }
+        except Exception:
+            return {'gc_count': self._gc_count}
+
+
+# 全域實例
+memory_gc = MemoryAwareGC(
+    memory_threshold_percent=75.0,
+    min_interval_seconds=30.0
+)
+
 # ========================================
 # 影像上傳管理器
 # ========================================
@@ -101,6 +202,11 @@ class ImageUploader:
         
         # 去重失敗行為
         self.dedup_failure_behavior = Settings.DEDUP_FAILURE_BEHAVIOR
+
+        self.memory_gc = MemoryAwareGC(
+            memory_threshold_percent=75.0,
+            min_interval_seconds=30.0
+        )
         
         logger.info("影像上傳 - 初始化完成 (連線複用與流式傳輸模式)")
         logger.info("影像上傳 - 參數設定：併發數量: %d, 超時: %d 秒, 重試: %d 次",
@@ -328,8 +434,7 @@ class ImageUploader:
                 
                 # 重要優化：顯式釋放任務物件記憶體並觸發 GC
                 tasks.clear()
-                del tasks
-                gc.collect() 
+                self.memory_gc.collect_if_needed()
                 
                 logger.info("影像上傳 - 批次 %d 完成: 成功 %d, 失敗 %d", batch_num, batch_successful, len(results)-batch_successful)
 
@@ -337,6 +442,8 @@ class ImageUploader:
             if batch_num < len(batches):
                 await asyncio.sleep(batch_delay)
 
+        self.memory_gc.collect_if_needed(force=True)
+        
         return {
             "successful": total_successful,
             "failed": total_failed,

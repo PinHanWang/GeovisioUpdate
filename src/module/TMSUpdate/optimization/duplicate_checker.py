@@ -18,6 +18,7 @@ import hashlib
 import os
 import logging
 from pathlib import Path
+from collections import OrderedDict
 from typing import Optional, Set, Tuple
 import aiohttp
 import asyncpg
@@ -33,6 +34,51 @@ logger = logging.getLogger(__name__)
 
 # 載入環境變數
 IMAGE_BASE_PATH = Settings.IMAGE_BASE_PATH
+
+
+class LRUCache:
+    """
+    簡易 LRU 快取實作
+    
+    使用 OrderedDict 維護插入順序，
+    存取時會將項目移到最後（最近使用）。
+    """
+    
+    def __init__(self, max_size: int = 100000):
+        self.max_size = max_size
+        self._cache: OrderedDict[str, bool] = OrderedDict()
+    
+    def __contains__(self, key: str) -> bool:
+        """檢查 key 是否存在，存在則移到最後（標記為最近使用）"""
+        if key in self._cache:
+            # 移到最後（最近使用）
+            self._cache.move_to_end(key)
+            return True
+        return False
+    
+    def add(self, key: str):
+        """新增 key 到快取"""
+        if key in self._cache:
+            # 已存在，移到最後
+            self._cache.move_to_end(key)
+        else:
+            # 新增
+            self._cache[key] = True
+            # 檢查是否超過上限
+            self._evict_if_needed()
+    
+    def _evict_if_needed(self):
+        """如果超過上限，移除最舊的項目"""
+        while len(self._cache) > self.max_size:
+            # popitem(last=False) 移除最舊的（最前面的）
+            self._cache.popitem(last=False)
+    
+    def __len__(self) -> int:
+        return len(self._cache)
+    
+    def clear(self):
+        """清空快取"""
+        self._cache.clear()
 
 
 class DuplicateChecker:
@@ -62,8 +108,8 @@ class DuplicateChecker:
         self.db_pool = None
         self.max_cache_size = Settings.DEDUP_MAX_CACHE_SIZE
         # 快取
-        self.md5_cache: Set[str] = set()
-        self.keyname_cache: Set[str] = set()
+        self.md5_cache = LRUCache(max_size=self.max_cache_size) 
+        self.keyname_cache = LRUCache(max_size=self.max_cache_size)
         
         # 統計
         self.stats = {
@@ -226,36 +272,13 @@ class DuplicateChecker:
         finally:
             if close_session and session:
                 await session.close()
-    
-    def _check_cache_size(self):
-        """檢查並清理過大的快取"""
-        if len(self.md5_cache) > self.max_cache_size:
-            # 保留最後 80% 的快取（簡易 LRU）
-            keep_size = int(self.max_cache_size * 0.8)
-            self.md5_cache = set(list(self.md5_cache)[-keep_size:])
-            logger.warning("重複性檢查 - MD5 快取已清理: %d 筆", len(self.md5_cache))
-        
-        if len(self.keyname_cache) > self.max_cache_size:
-            keep_size = int(self.max_cache_size * 0.8)
-            self.keyname_cache = set(list(self.keyname_cache)[-keep_size:])
-            logger.warning("重複性檢查 - KeyName 快取已清理: %d 筆", len(self.keyname_cache))
 
     async def check_md5_exists(self, md5: str) -> bool:
-        """
-        檢查 MD5 是否已存在
-        
-        Args:
-            md5: MD5 字串 (32 字元 hex)
-            
-        Returns:
-            是否已存在
-        """
-        self._check_cache_size()
-
+        """檢查 MD5 是否已存在"""
         if not md5:
             return False
         
-        # 1. 快取檢查
+        # 1. 快取檢查（LRU：存取時自動移到最後）
         if md5 in self.md5_cache:
             self.stats['cache_hits'] += 1
             logger.debug("重複性檢查 - MD5 快取命中: %s...", md5[:8])
@@ -278,12 +301,11 @@ class DuplicateChecker:
                 )
                 
                 if exists:
-                    # 加入快取
+                    # ✅ 使用 LRU 快取的 add 方法
                     self.md5_cache.add(md5)
                     logger.debug("重複性檢查 - MD5 資料庫命中: %s...", md5[:8])
                     return True
                 
-                logger.debug("重複性檢查 - MD5 不存在: %s...", md5[:8])
                 return False
                 
         except Exception as e:
@@ -291,22 +313,10 @@ class DuplicateChecker:
             return False
     
     async def check_keyname_exists(self, keyname: str) -> bool:
-        """
-        檢查 KeyName 是否已存在
-        
-        Args:
-            keyname: 檔案名稱 (不含副檔名,例如: 20250618093828079_S9D3DPLAR)
-            
-        Returns:
-            是否已存在
-        """
-
-        self._check_cache_size()
-        
+        """檢查 KeyName 是否已存在"""
         if not keyname:
             return False
         
-        # 加上 .jpg 副檔名
         filename = f"{keyname}.jpg"
         
         # 1. 快取檢查
@@ -332,18 +342,16 @@ class DuplicateChecker:
                 )
                 
                 if exists:
-                    # 加入快取
                     self.keyname_cache.add(filename)
                     logger.debug("重複性檢查 - KeyName 資料庫命中: %s", filename)
                     return True
                 
-                logger.debug("重複性檢查 - KeyName 不存在: %s", filename)
                 return False
                 
         except Exception as e:
             logger.error("重複性檢查 - KeyName 查詢失敗: %s", str(e))
             return False
-    
+        
     async def should_skip_upload(
         self, 
         keyname: str,
