@@ -168,30 +168,32 @@ async def _get_compat_client():
     )
     return client, session
 
-import warnings
+# import warnings
 
-async def create_collection(title, description, keywords, bbox=None, start_time=None):
-    """向後相容函數 - 建議使用 GeoVisioAPIClient 類別"""
-    warnings.warn(
-        "create_collection() 將在未來版本移除，請使用 GeoVisioAPIClient 類別",
-        DeprecationWarning
-    )
-    client, session = await _get_compat_client()
-    try:
-        return await client.create_collection(title, description, keywords, bbox, start_time)
-    finally:
-        await session.close()
+# async def create_collection(title, description, keywords, bbox=None, start_time=None):
+#     """向後相容函數 - 建議使用 GeoVisioAPIClient 類別"""
+#     warnings.warn(
+#         "create_collection() 將在未來版本移除，請使用 GeoVisioAPIClient 類別",
+#         DeprecationWarning,
+#         stacklevel=2
 
-async def get_all_collections():
-    client, session = await _get_compat_client()
-    try:
-        return await client.get_all_collections()
-    finally:
-        await session.close()
+#     )
+#     client, session = await _get_compat_client()
+#     try:
+#         return await client.create_collection(title, description, keywords, bbox, start_time)
+#     finally:
+#         await session.close()
 
-async def get_collection_by_items_id(collection_id):
-    client, session = await _get_compat_client()
-    try:
-        return await client.get_collection_by_id(collection_id)
-    finally:
-        await session.close()
+# async def get_all_collections():
+#     client, session = await _get_compat_client()
+#     try:
+#         return await client.get_all_collections()
+#     finally:
+#         await session.close()
+
+# async def get_collection_by_items_id(collection_id):
+#     client, session = await _get_compat_client()
+#     try:
+#         return await client.get_collection_by_id(collection_id)
+#     finally:
+#         await session.close()
