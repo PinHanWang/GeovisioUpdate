@@ -25,7 +25,7 @@ import asyncpg
 
 # 導入設定
 try:
-    from src.module.TMSUpdate.config.settings import Settings
+    from src.config.settings import Settings
 except ImportError:
     from ..config.settings import Settings
 

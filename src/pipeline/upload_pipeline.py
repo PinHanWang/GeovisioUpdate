@@ -21,10 +21,10 @@ from dotenv import load_dotenv
 
 # 導入自定義模組
 try:
-    from src.module.TMSUpdate.core.csv_encoding_converter import convert_csv_encoding
-    from src.module.TMSUpdate.core.image_data_preprocessor import data_preprocessing
-    from src.module.TMSUpdate.config.logging_config import LOGGING_CONFIG
-    from src.module.TMSUpdate.config.settings import Settings
+    from src.core.csv_encoding_converter import convert_csv_encoding
+    from src.core.image_data_preprocessor import data_preprocessing
+    from src.config.logging_config import LOGGING_CONFIG
+    from src.config.settings import Settings
 except ImportError:
     from ..core.csv_encoding_converter import convert_csv_encoding
     from ..core.image_data_preprocessor import data_preprocessing
@@ -134,8 +134,8 @@ class GeoVisioUploadPipeline:
 
         # 2. 初始化 API 客戶端並注入 Session
         try:
-            from src.module.TMSUpdate.api.geovisio_api_client import GeoVisioAPIClient
-            from src.module.TMSUpdate.api.image_uploader import ImageUploader
+            from src.api.geovisio_api_client import GeoVisioAPIClient
+            from src.api.image_uploader import ImageUploader
         except ImportError:
             # 如果是在模組內部運行，才使用相對路徑
             from ..api.geovisio_api_client import GeoVisioAPIClient
@@ -148,7 +148,7 @@ class GeoVisioUploadPipeline:
 
         # 3. 初始化其餘模組 (保持原邏輯)
         try:
-            from src.module.TMSUpdate.core.failure_checker import get_failure_tracker
+            from src.core.failure_checker import get_failure_tracker
             self.failure_tracker = get_failure_tracker()
             self.failure_tracker.clear()
         except Exception:
@@ -156,7 +156,7 @@ class GeoVisioUploadPipeline:
 
         if self.config['enable_deduplication']:
             try:
-                from src.module.TMSUpdate.optimization.duplicate_checker import get_duplicate_checker
+                from src.optimization.duplicate_checker import get_duplicate_checker
                 self.dedup_checker = get_duplicate_checker()
                 await self.dedup_checker.initialize()
             except Exception as e:
@@ -165,7 +165,7 @@ class GeoVisioUploadPipeline:
 
         if self.config['enable_resource_monitor']:
             try:
-                from src.module.TMSUpdate.optimization.resource_monitor import simple_resource_monitor
+                from src.optimization.resource_monitor import simple_resource_monitor
                 self.resource_monitor = simple_resource_monitor
                 await self.resource_monitor.initialize()
             except Exception as e:
@@ -173,14 +173,14 @@ class GeoVisioUploadPipeline:
                 self.resource_monitor = None
 
         try:
-            from src.module.TMSUpdate.optimization.sequence_batch_handler import large_seq_handler
+            from src.optimization.sequence_batch_handler import large_seq_handler
             self.seq_handler = large_seq_handler
         except Exception:
             self.seq_handler = None
 
         # 4. 初始化上傳器 (自動繼承 api_client 的 session)
         try:
-            from src.module.TMSUpdate.api.image_uploader import ImageUploader
+            from src.api.image_uploader import ImageUploader
         except ImportError:
             from ..api.image_uploader import ImageUploader
         

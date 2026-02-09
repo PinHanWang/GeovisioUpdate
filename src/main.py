@@ -12,7 +12,7 @@ from pathlib import Path
 # ========================================
 # 取得專案根目錄 (GeovisioUpdate)
 _current_file = Path(__file__).resolve()
-_project_root = _current_file.parent.parent.parent.parent  # TMSUpdate -> module -> src -> GeovisioUpdate
+_project_root = _current_file.parent.parent  # src -> GeovisioUpdate
 
 # 如果專案根目錄不在 sys.path 中，加入它
 if str(_project_root) not in sys.path:
@@ -21,10 +21,10 @@ if str(_project_root) not in sys.path:
 # ========================================
 # 導入 Pipeline 與配置
 # ========================================
-from src.module.TMSUpdate.pipeline.upload_pipeline import GeoVisioUploadPipeline
-from src.module.TMSUpdate.config.logging_config import LOGGING_CONFIG
-from src.module.TMSUpdate.config.settings import Settings
-from src.module.TMSUpdate.utils.docker_monitor import HawserDockerMonitor
+from src.pipeline.upload_pipeline import GeoVisioUploadPipeline
+from src.config.logging_config import LOGGING_CONFIG
+from src.config.settings import Settings
+from src.utils.docker_monitor import HawserDockerMonitor
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)

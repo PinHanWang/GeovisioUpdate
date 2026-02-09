@@ -5,7 +5,7 @@ Pipeline 模組
 """
 
 try:
-    from src.module.TMSUpdate.pipeline.upload_pipeline import GeoVisioUploadPipeline
+    from src.pipeline.upload_pipeline import GeoVisioUploadPipeline
 except ImportError:
     from .upload_pipeline import GeoVisioUploadPipeline
 

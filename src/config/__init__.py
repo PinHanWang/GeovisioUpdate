@@ -1,12 +1,12 @@
 """配置模組"""
 
 try:
-    from src.module.TMSUpdate.config.logging_config import (
+    from src.config.logging_config import (
         LOGGING_CONFIG,
         get_logger,
         setup_logging
     )
-    from src.module.TMSUpdate.config.settings import Settings
+    from src.config.settings import Settings
 except ImportError:
     from .logging_config import LOGGING_CONFIG, get_logger, setup_logging
     from .settings import Settings

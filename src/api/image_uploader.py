@@ -47,11 +47,11 @@ from tenacity import (
 from dotenv import load_dotenv
 # 從獨立模組導入異常類別 (避免循環 import)
 try:
-    from src.module.TMSUpdate.api.exceptions import (
+    from src.api.exceptions import (
         ImageAlreadyExistsError,
         RetryableUploadError
     )
-    from src.module.TMSUpdate.config.settings import Settings
+    from src.config.settings import Settings
 except ImportError:
     from .exceptions import ImageAlreadyExistsError, RetryableUploadError
     from ..config.settings import Settings

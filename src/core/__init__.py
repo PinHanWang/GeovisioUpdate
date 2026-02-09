@@ -1,11 +1,11 @@
 # 修改為：
 """核心處理模組"""
 
-from src.module.TMSUpdate.core.csv_encoding_converter import (
+from src.core.csv_encoding_converter import (
     CSVEncodingConverter,
     convert_csv_encoding
 )
-from src.module.TMSUpdate.core.failure_checker import (
+from src.core.failure_checker import (
     FailureTracker,
     get_failure_tracker,
     # 向後兼容
@@ -13,7 +13,7 @@ from src.module.TMSUpdate.core.failure_checker import (
     upload_failures,
     collection_failures
 )
-from src.module.TMSUpdate.core.image_data_preprocessor import (
+from src.core.image_data_preprocessor import (
     GPSDataPreprocessor,
     data_preprocessing
 )
