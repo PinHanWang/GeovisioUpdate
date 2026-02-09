@@ -4,7 +4,8 @@ GeoVisio 資料庫重複影像檢查工具
 功能:
 1. 檢查 KeyName (originalFileName) 重複
 2. 檢查 MD5 (original_content_md5) 重複
-3. 產生詳細報告
+3. 輸出每張重複影像對應的 collection_id (即 sequences.id)
+4. 產生詳細報告
 
 使用方式:
     python check_duplicates.py
@@ -25,7 +26,7 @@ from dotenv import load_dotenv
 
 # 找到專案根目錄的 .env 檔案
 script_dir = Path(__file__).resolve().parent
-project_root = script_dir.parent.parent.parent.parent  # tools -> TMSUpdate -> module -> src -> GeovisioUpdate
+project_root = script_dir.parent.parent.parent.parent
 env_path = project_root / '.env'
 
 print(f"📂 專案根目錄: {project_root}")
@@ -65,23 +66,26 @@ class DuplicateChecker:
     
     async def check_keyname_duplicates(self) -> List[Dict]:
         """
-        檢查 KeyName (originalFileName) 重複
+        檢查 KeyName (originalFileName) 重複，包含 collection_id (sequences.id)
         """
         print("\n" + "=" * 60)
         print("🔍 檢查 KeyName (originalFileName) 重複...")
         print("=" * 60)
         
+        # collection_id 就是 sequences.id
         query = """
             SELECT 
-                metadata->>'originalFileName' as filename,
-                COUNT(*) as count,
-                array_agg(id::text) as picture_ids,
-                array_agg(inserted_at::text) as inserted_times
-            FROM pictures 
-            WHERE metadata->>'originalFileName' IS NOT NULL
-            GROUP BY metadata->>'originalFileName'
-            HAVING COUNT(*) > 1
-            ORDER BY COUNT(*) DESC
+                p.metadata->>'originalFileName' as filename,
+                COUNT(DISTINCT p.id) as count,
+                array_agg(DISTINCT p.id::text) as picture_ids,
+                array_agg(p.inserted_at::text) as inserted_times,
+                array_agg(DISTINCT sp.seq_id::text) as collection_ids
+            FROM pictures p
+            LEFT JOIN sequences_pictures sp ON p.id = sp.pic_id
+            WHERE p.metadata->>'originalFileName' IS NOT NULL
+            GROUP BY p.metadata->>'originalFileName'
+            HAVING COUNT(DISTINCT p.id) > 1
+            ORDER BY COUNT(DISTINCT p.id) DESC
             LIMIT 1000
         """
         
@@ -89,11 +93,15 @@ class DuplicateChecker:
         
         duplicates = []
         for r in records:
+            # 處理 NULL 值
+            col_ids = [c if c else 'N/A' for c in (r['collection_ids'] or [])]
+            
             duplicates.append({
                 'filename': r['filename'],
                 'count': r['count'],
-                'picture_ids': r['picture_ids'],
-                'inserted_times': r['inserted_times']
+                'picture_ids': r['picture_ids'] or [],
+                'inserted_times': r['inserted_times'] or [],
+                'collection_ids': col_ids
             })
         
         total_duplicates = len(duplicates)
@@ -108,12 +116,17 @@ class DuplicateChecker:
             print(f"\n📋 前 10 個重複最多的檔名:")
             for i, d in enumerate(duplicates[:10], 1):
                 print(f"   {i}. {d['filename']} (重複 {d['count']} 次)")
+                # 顯示 collection_ids
+                unique_cols = list(set(d['collection_ids']))
+                for col in unique_cols[:3]:
+                    if col != 'N/A':
+                        print(f"      → Collection: {col[:16]}...")
         
         return duplicates
     
     async def check_md5_duplicates(self) -> List[Dict]:
         """
-        檢查 MD5 (original_content_md5) 重複
+        檢查 MD5 (original_content_md5) 重複，包含 collection_id
         """
         print("\n" + "=" * 60)
         print("🔍 檢查 MD5 (original_content_md5) 重複...")
@@ -121,16 +134,18 @@ class DuplicateChecker:
         
         query = """
             SELECT 
-                original_content_md5::text as md5,
-                COUNT(*) as count,
-                array_agg(id::text) as picture_ids,
-                array_agg(metadata->>'originalFileName') as filenames,
-                array_agg(inserted_at::text) as inserted_times
-            FROM pictures 
-            WHERE original_content_md5 IS NOT NULL
-            GROUP BY original_content_md5
-            HAVING COUNT(*) > 1
-            ORDER BY COUNT(*) DESC
+                p.original_content_md5::text as md5,
+                COUNT(DISTINCT p.id) as count,
+                array_agg(DISTINCT p.id::text) as picture_ids,
+                array_agg(p.metadata->>'originalFileName') as filenames,
+                array_agg(p.inserted_at::text) as inserted_times,
+                array_agg(DISTINCT sp.seq_id::text) as collection_ids
+            FROM pictures p
+            LEFT JOIN sequences_pictures sp ON p.id = sp.pic_id
+            WHERE p.original_content_md5 IS NOT NULL
+            GROUP BY p.original_content_md5
+            HAVING COUNT(DISTINCT p.id) > 1
+            ORDER BY COUNT(DISTINCT p.id) DESC
             LIMIT 1000
         """
         
@@ -138,12 +153,15 @@ class DuplicateChecker:
         
         duplicates = []
         for r in records:
+            col_ids = [c if c else 'N/A' for c in (r['collection_ids'] or [])]
+            
             duplicates.append({
                 'md5': r['md5'],
                 'count': r['count'],
-                'picture_ids': r['picture_ids'],
-                'filenames': r['filenames'],
-                'inserted_times': r['inserted_times']
+                'picture_ids': r['picture_ids'] or [],
+                'filenames': r['filenames'] or [],
+                'inserted_times': r['inserted_times'] or [],
+                'collection_ids': col_ids
             })
         
         total_duplicates = len(duplicates)
@@ -157,12 +175,16 @@ class DuplicateChecker:
         if duplicates:
             print(f"\n📋 前 10 個重複最多的 MD5:")
             for i, d in enumerate(duplicates[:10], 1):
-                sample_files = d['filenames'][:3]
-                files_str = ', '.join(f for f in sample_files if f)
+                sample_files = [f for f in d['filenames'][:3] if f]
+                files_str = ', '.join(sample_files)
                 if len(d['filenames']) > 3:
                     files_str += f" ... 等 {len(d['filenames'])} 個檔案"
                 print(f"   {i}. {d['md5'][:16]}... (重複 {d['count']} 次)")
                 print(f"      檔名: {files_str}")
+                # 顯示 collection_ids
+                unique_cols = list(set(d['collection_ids']))
+                cols_str = ', '.join(c[:8] + '...' if c != 'N/A' else 'N/A' for c in unique_cols[:3])
+                print(f"      Collections: {cols_str}")
         
         return duplicates
     
@@ -212,21 +234,36 @@ class DuplicateChecker:
         return mismatches
     
     async def get_duplicate_details(self, filename: str) -> List[Dict]:
-        """取得特定檔名的重複詳情"""
+        """取得特定檔名的重複詳情，包含 collection_id"""
         query = """
             SELECT 
-                id::text,
-                metadata->>'originalFileName' as filename,
-                original_content_md5::text as md5,
-                inserted_at,
-                status::text
-            FROM pictures 
-            WHERE metadata->>'originalFileName' = $1
-            ORDER BY inserted_at
+                p.id::text,
+                p.metadata->>'originalFileName' as filename,
+                p.original_content_md5::text as md5,
+                p.inserted_at,
+                p.status::text,
+                sp.seq_id::text as collection_id
+            FROM pictures p
+            LEFT JOIN sequences_pictures sp ON p.id = sp.pic_id
+            WHERE p.metadata->>'originalFileName' = $1
+            ORDER BY p.inserted_at
         """
         
         records = await self.conn.fetch(query, filename)
         return [dict(r) for r in records]
+    
+    async def get_collection_summary(self, duplicates: List[Dict]) -> Dict[str, int]:
+        """
+        統計重複影像涉及的 Collection 數量
+        """
+        collection_counts = {}
+        
+        for dup in duplicates:
+            for col_id in dup.get('collection_ids', []):
+                if col_id and col_id != 'N/A':
+                    collection_counts[col_id] = collection_counts.get(col_id, 0) + 1
+        
+        return collection_counts
     
     async def generate_report(self, output_dir: str = "output/duplicate_reports"):
         """產生完整報告並儲存為 CSV"""
@@ -249,6 +286,14 @@ class DuplicateChecker:
             keyname_file = output_path / f"{timestamp}_keyname_duplicates.csv"
             df_keyname.to_csv(keyname_file, index=False, encoding='utf-8-sig')
             print(f"\n💾 KeyName 重複報告已儲存: {keyname_file}")
+            
+            # Collection 統計
+            col_summary = await self.get_collection_summary(keyname_dups)
+            if col_summary:
+                print(f"\n📊 涉及的 Collection 統計 (前 10 個):")
+                sorted_cols = sorted(col_summary.items(), key=lambda x: x[1], reverse=True)
+                for col_id, count in sorted_cols[:10]:
+                    print(f"   - {col_id[:24]}... : {count} 張重複")
         
         # 3. MD5 重複
         md5_dups = await self.check_md5_duplicates()
@@ -256,7 +301,7 @@ class DuplicateChecker:
             df_md5 = pd.DataFrame(md5_dups)
             md5_file = output_path / f"{timestamp}_md5_duplicates.csv"
             df_md5.to_csv(md5_file, index=False, encoding='utf-8-sig')
-            print(f"💾 MD5 重複報告已儲存: {md5_file}")
+            print(f"\n💾 MD5 重複報告已儲存: {md5_file}")
         
         # 4. KeyName-MD5 不一致
         mismatches = await self.check_keyname_md5_mismatch()
@@ -264,7 +309,7 @@ class DuplicateChecker:
             df_mismatch = pd.DataFrame(mismatches)
             mismatch_file = output_path / f"{timestamp}_keyname_md5_mismatch.csv"
             df_mismatch.to_csv(mismatch_file, index=False, encoding='utf-8-sig')
-            print(f"💾 KeyName-MD5 不一致報告已儲存: {mismatch_file}")
+            print(f"\n💾 KeyName-MD5 不一致報告已儲存: {mismatch_file}")
         
         # 5. 摘要
         print("\n" + "=" * 60)
@@ -276,6 +321,12 @@ class DuplicateChecker:
         print(f"   MD5 重複組數: {len(md5_dups)}")
         print(f"   MD5 重複影像數: {sum(d['count'] for d in md5_dups) if md5_dups else 0}")
         print(f"   KeyName-MD5 不一致: {len(mismatches)}")
+        
+        # Collection 統計摘要
+        if keyname_dups:
+            col_summary = await self.get_collection_summary(keyname_dups)
+            print(f"   涉及的 Collection 數量: {len(col_summary)}")
+        
         print("=" * 60)
 
 
@@ -309,6 +360,7 @@ async def main():
                     print(f"       MD5: {d['md5']}")
                     print(f"       狀態: {d['status']}")
                     print(f"       建立時間: {d['inserted_at']}")
+                    print(f"       Collection ID: {d['collection_id'] or 'N/A'}")
             else:
                 print(f"   找不到檔名: {args.filename}")
         else:
