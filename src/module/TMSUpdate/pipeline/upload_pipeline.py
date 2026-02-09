@@ -300,16 +300,25 @@ class GeoVisioUploadPipeline:
         # 2. 檢查本地資料庫（用第一張影像）
         # ========================================
         first_keyname = upload_df['KeyName'].iloc[0]
-        existing_collection_id = None
+        first_keyname_exists = False
         
         if self.dedup_checker:
-            existing_collection_id = await self.dedup_checker.get_collection_id_by_keyname(first_keyname)
+            first_keyname_exists = await self.dedup_checker.check_keyname_exists_in_db(first_keyname)
         
         # ========================================
         # 3. 判斷是新序列還是續傳
         # ========================================
-        if existing_collection_id:
+        existing_collection = None
+        if first_keyname_exists:
+            # 第一張已存在，透過 API 搜尋對應的 Collection
+            existing_collection = await self.api_client.find_collection_by_sequence(
+                seq_id=str(seq_id),
+                collection_date=str(collection_date)
+            )
+        
+        if existing_collection:
             # 續傳模式：查詢 API 取得已上傳數量
+            existing_collection_id = existing_collection.get('id')
             logger.info(
                 "流程管理 - 發現既有 Collection: %s，檢查上傳狀態...",
                 existing_collection_id

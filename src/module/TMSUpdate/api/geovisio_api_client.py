@@ -237,6 +237,55 @@ class GeoVisioAPIClient:
         logger.info("API 查詢 - Collection %s 已有 %d 張影像", collection_id, len(keynames))
         return keynames
 
+    async def find_collection_by_sequence(
+        self,
+        seq_id: str,
+        collection_date: str
+    ) -> Optional[Dict]:
+        """
+        根據 Sequence ID 和日期搜尋對應的 Collection
+        
+        用於續傳：在 API 中搜尋包含特定 Sequence ID 和日期的 Collection。
+        
+        Args:
+            seq_id: 序列 ID
+            collection_date: 日期字串 (e.g., '2025-06-01')
+            
+        Returns:
+            Collection 字典，或 None
+        """
+        try:
+            data = await self.get_all_collections()
+            if not data:
+                return None
+            
+            collections = data.get('collections', [])
+            
+            # 在 keywords 中搜尋包含 Sequence ID 和日期的 Collection
+            for col in collections:
+                keywords = col.get('keywords', [])
+                keywords_text = ' '.join(keywords)
+                
+                # 檢查是否包含 Sequence ID 和日期
+                # keywords 格式範例: "交工案第一分案資料蒸集(10米以上道路) Date: 2025-06-01; Sequence ID: 36"
+                if f"Sequence ID: {seq_id}" in keywords_text or f"Sequence ID:{seq_id}" in keywords_text:
+                    if str(collection_date) in keywords_text:
+                        logger.info(
+                            "API 查詢 - 找到匹配 Collection: ID=%s, SeqID=%s, Date=%s",
+                            col.get('id'), seq_id, collection_date
+                        )
+                        return col
+            
+            logger.debug(
+                "API 查詢 - 未找到匹配的 Collection: SeqID=%s, Date=%s",
+                seq_id, collection_date
+            )
+            return None
+            
+        except Exception as e:
+            logger.error("API 查詢 - 搜尋 Collection 失敗: %s", str(e))
+            return None
+
 # ========================================
 # 向後相容函數 (修正：這些函數現在應僅作為快速 Entry Point，不建議高頻使用)
 # ========================================

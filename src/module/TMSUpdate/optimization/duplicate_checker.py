@@ -352,55 +352,46 @@ class DuplicateChecker:
             logger.error("重複性檢查 - KeyName 查詢失敗: %s", str(e))
             return False
 
-    async def get_collection_id_by_keyname(self, keyname: str) -> Optional[str]:
+    async def check_keyname_exists_in_db(self, keyname: str) -> bool:
         """
-        根據 KeyName 取得對應的 Collection ID
+        檢查 KeyName 是否已存在於資料庫中（不含快取）
         
-        用於續傳檢查：當發現 KeyName 已存在時，取得其所屬的 Collection ID。
+        用於續傳檢查：確認該 KeyName 是否已經上傳過。
         
         Args:
             keyname: 影像 KeyName（不含副檔名）
             
         Returns:
-            collection_id 字串，或 None（如果不存在）
+            是否存在
         """
         if not keyname:
-            return None
+            return False
         
         filename = f"{keyname}.jpg"
         
         if not self.db_pool:
-            logger.warning("重複性檢查 - 資料庫未連線，無法查詢 collection_id")
-            return None
+            logger.warning("重複性檢查 - 資料庫未連線")
+            return False
         
         try:
             async with self.db_pool.acquire() as conn:
-                # 從 pictures 表查詢該影像所屬的 collection_id
-                collection_id = await conn.fetchval(
+                exists = await conn.fetchval(
                     """
-                    SELECT collection_id::text
-                    FROM pictures 
-                    WHERE metadata->>'originalFileName' = $1
-                    LIMIT 1
+                    SELECT EXISTS(
+                        SELECT 1 FROM pictures 
+                        WHERE metadata->>'originalFileName' = $1
+                    )
                     """,
                     filename
                 )
-                
-                if collection_id:
-                    logger.debug(
-                        "重複性檢查 - 找到 Collection: KeyName=%s, CollectionID=%s",
-                        keyname, collection_id
-                    )
-                    return collection_id
-                
-                return None
+                return exists
                 
         except Exception as e:
             logger.error(
-                "重複性檢查 - 查詢 collection_id 失敗: KeyName=%s, 錯誤=%s",
+                "重複性檢查 - 查詢 KeyName 失敗: KeyName=%s, 錯誤=%s",
                 keyname, str(e)
             )
-            return None
+            return False
         
     async def should_skip_upload(
         self, 
