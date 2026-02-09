@@ -154,7 +154,7 @@ SPECIFIED_DATES=2025-08-29,2025-08-30
 python -m src.module.TMSUpdate.main
 ```
 
-### 執行前檢查重複
+### 執後檢查重複
 
 ```bash
 # 檢查資料庫中的重複影像
