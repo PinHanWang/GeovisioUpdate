@@ -1,44 +1,57 @@
-# Core data processing packages
-pandas>=1.5.0
-numpy>=1.21.0
+# ========================================
+# GeoVisio 上傳系統 - 依賴套件
+# ========================================
+# 專案版本: 2.0.0
+# Python 版本: 3.10+
+# 最後更新: 2026-02-09
+# ========================================
 
-# Async HTTP client and file handling
-aiohttp>=3.8.0
-aiofiles>=22.0.0
+# ----------------------------------------
+# 核心非同步與網路
+# ----------------------------------------
+aiohttp>=3.9.0              # 非同步 HTTP 客戶端
+aiofiles>=23.0.0            # 非同步檔案操作
 
-# Environment configuration
-python-dotenv>=0.19.0
+# ----------------------------------------
+# 資料庫
+# ----------------------------------------
+asyncpg>=0.29.0             # PostgreSQL 非同步驅動
 
-# Geospatial coordinate transformation
-pyproj>=3.4.0
+# ----------------------------------------
+# 資料處理
+# ----------------------------------------
+pandas>=2.0.0               # 資料處理與分析
+numpy>=1.24.0               # 數值計算
 
-# Date and time handling with timezone support
-zoneinfo>=0.1.0  # Python 3.9+, backport for older versions
-pytz>=2022.1
+# ----------------------------------------
+# 地理座標轉換
+# ----------------------------------------
+pyproj>=3.6.0               # 座標系統轉換 (WGS84 ↔ TWD97)
 
-# Retry mechanism for API calls
-tenacity>=8.2.0
+# ----------------------------------------
+# 重試與錯誤處理
+# ----------------------------------------
+tenacity>=8.2.0             # 重試機制 (指數退避)
 
-# HTTP requests (synchronous)
-requests>=2.28.0
+# ----------------------------------------
+# 環境與設定
+# ----------------------------------------
+python-dotenv>=1.0.0        # 環境變數管理 (.env)
 
-# File path handling (built-in)
-# pathlib is part of Python standard library
+# ----------------------------------------
+# 編碼偵測
+# ----------------------------------------
+chardet>=5.2.0              # CSV 檔案編碼自動偵測
 
-# System utilities (built-in)
-# os, sys, time, asyncio are part of Python standard library
+# ----------------------------------------
+# 系統監控
+# ----------------------------------------
+psutil>=5.9.0               # 記憶體與 CPU 監控
 
-# JSON and IO handling (built-in)
-# json, io are part of Python standard library
-
-# Logging (built-in)
-# logging is part of Python standard library
-
-# Date and time (built-in)
-# datetime is part of Python standard library
-
-# Development packages (uncomment if needed)
-# pytest>=7.0.0
-# pytest-asyncio>=0.20.0
-# black>=22.0.0
-# flake8>=4.0.0
+# ----------------------------------------
+# 開發工具 (選用)
+# ----------------------------------------
+# pytest>=7.0.0             # 單元測試
+# pytest-asyncio>=0.21.0    # 非同步測試支援
+# black>=23.0.0             # 程式碼格式化
+# flake8>=6.0.0             # 程式碼檢查
