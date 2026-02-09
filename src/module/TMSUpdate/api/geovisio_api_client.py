@@ -155,6 +155,88 @@ class GeoVisioAPIClient:
             logger.warning("API 健康檢查失敗: %s", str(e))
             return False
 
+    async def get_collection_items(
+        self,
+        collection_id: str,
+        limit: int = 10000
+    ) -> List[Dict]:
+        """
+        取得 Collection 內所有 Items
+        
+        Args:
+            collection_id: Collection ID
+            limit: 最大數量
+            
+        Returns:
+            Items 列表
+        """
+        all_items = []
+        
+        try:
+            # GeoVisio 可能有分頁，需要處理
+            path = f"/api/collections/{collection_id}/items"
+            params = {"limit": min(limit, 1000)}  # 每次最多取 1000
+            
+            while True:
+                data = await self._request("GET", path, params=params)
+                
+                if not data:
+                    break
+                
+                items = data.get('features', [])
+                all_items.extend(items)
+                
+                # 檢查是否有下一頁
+                links = data.get('links', [])
+                next_link = next((l for l in links if l.get('rel') == 'next'), None)
+                
+                if next_link and len(all_items) < limit:
+                    # 取得下一頁的參數
+                    from urllib.parse import urlparse, parse_qs
+                    next_url = next_link.get('href', '')
+                    if next_url:
+                        parsed = urlparse(next_url)
+                        params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+                    else:
+                        break
+                else:
+                    break
+            
+            logger.debug("API 查詢 - Collection %s 共有 %d 個 items", collection_id, len(all_items))
+            return all_items
+            
+        except Exception as e:
+            logger.error("API 查詢 - 取得 items 失敗: %s", str(e))
+            return []
+
+    async def get_uploaded_keynames(self, collection_id: str) -> set:
+        """
+        取得 Collection 內已上傳的 KeyName 集合
+        
+        用於續傳檢查：取得該 Collection 內已有的影像清單。
+        
+        Args:
+            collection_id: Collection ID
+            
+        Returns:
+            KeyName 集合 (set)
+        """
+        items = await self.get_collection_items(collection_id)
+        
+        keynames = set()
+        for item in items:
+            # 從 properties.original_file:name 取得檔名
+            properties = item.get('properties', {})
+            original_name = properties.get('original_file:name', '')
+            
+            if original_name:
+                # 移除 .jpg 副檔名
+                keyname = original_name.replace('.jpg', '').replace('.JPG', '')
+                keynames.add(keyname)
+        
+        logger.info("API 查詢 - Collection %s 已有 %d 張影像", collection_id, len(keynames))
+        return keynames
+
 # ========================================
 # 向後相容函數 (修正：這些函數現在應僅作為快速 Entry Point，不建議高頻使用)
 # ========================================

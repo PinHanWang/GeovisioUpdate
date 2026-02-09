@@ -267,40 +267,105 @@ class GeoVisioUploadPipeline:
         seq_count: int,
         total_seq: int
     ) -> Optional[str]:
-        """上傳單個序列"""
-        logger.info("流程管理 - 處理序列 %d/%d: ID=%s, 日期=%s", seq_count, total_seq, seq_id, collection_date)
+        """
+        上傳單個序列（支援續傳）
         
-        # 1. 排序
+        流程：
+        1. 從 CSV 取得序列資訊（總數、KeyName 清單）
+        2. 檢查本地資料庫是否已有此序列的影像
+        3. 如果有，取得 collection_id 並查詢 API 已上傳數量
+        4. 比對數量，決定是否需要續傳
+        """
+        # ========================================
+        # 1. 從 CSV 取得序列資訊
+        # ========================================
         seq_sorted_data = seq_data.sort_values(by='GPSTime')
         if seq_sorted_data.empty:
-            logger.error("流程管理 - 序列資料為空, 跳過: ID=%s", seq_id)
+            logger.error("流程管理 - 序列資料為空: ID=%s", seq_id)
             return None
-
-        # --- 核心修改：解決 Timestamp 序列化失敗問題 ---
-        # 在傳給 uploader 之前，確保所有的 Timestamp 物件轉為 ISO 字串格式
+        
         upload_df = seq_sorted_data.copy()
         if pd.api.types.is_datetime64_any_dtype(upload_df['GPSTime']):
-            # 轉換為 GeoVisio 喜歡的格式：'2025-06-18T09:38:28.079'
             upload_df['GPSTime'] = upload_df['GPSTime'].dt.strftime('%Y-%m-%dT%H:%M:%S.%f').str[:-3]
-        # ----------------------------------------------
-
-        # 2. 創建 Collection
-        title = f"交工案第一分案(10米道路) Date: {collection_date}; Sequence ID: {seq_id}"
-        description = f"Data for {collection_date}; Sequence ID: {seq_id}"
-        keywords = ["交工案", "資料蒐集", f"Sequence ID:{seq_id}", f"日期:{collection_date}"]
         
-        collection_id = await self.api_client.create_collection(
-            title=title, description=description, keywords=keywords
+        csv_keynames = set(upload_df['KeyName'].tolist())
+        csv_total = len(csv_keynames)
+        
+        logger.info(
+            "流程管理 - 處理序列 %d/%d: ID=%s, 日期=%s, CSV總數=%d",
+            seq_count, total_seq, seq_id, collection_date, csv_total
         )
         
-        if not collection_id:
-            return None
-
-        # 3. 執行影像上傳 (使用轉換後的 upload_df)
-        uploaded_result = await self.uploader.upload_sequence(upload_df, collection_id)
+        # ========================================
+        # 2. 檢查本地資料庫（用第一張影像）
+        # ========================================
+        first_keyname = upload_df['KeyName'].iloc[0]
+        existing_collection_id = None
+        
+        if self.dedup_checker:
+            existing_collection_id = await self.dedup_checker.get_collection_id_by_keyname(first_keyname)
+        
+        # ========================================
+        # 3. 判斷是新序列還是續傳
+        # ========================================
+        if existing_collection_id:
+            # 續傳模式：查詢 API 取得已上傳數量
+            logger.info(
+                "流程管理 - 發現既有 Collection: %s，檢查上傳狀態...",
+                existing_collection_id
+            )
+            
+            uploaded_keynames = await self.api_client.get_uploaded_keynames(existing_collection_id)
+            uploaded_count = len(uploaded_keynames)
+            
+            if uploaded_count >= csv_total:
+                # 已完成
+                logger.info(
+                    "流程管理 - 序列已完成，跳過: ID=%s (已上傳=%d, CSV總數=%d)",
+                    seq_id, uploaded_count, csv_total
+                )
+                return existing_collection_id
+            else:
+                # 需要續傳
+                pending_df = upload_df[~upload_df['KeyName'].isin(uploaded_keynames)]
+                pending_count = len(pending_df)
+                
+                logger.info(
+                    "流程管理 - 續傳模式: ID=%s, 已上傳=%d, 待上傳=%d",
+                    seq_id, uploaded_count, pending_count
+                )
+                
+                collection_id = existing_collection_id
+        else:
+            # 新序列：建立新 Collection
+            title = f"交工案第一分案(10米道路) Date: {collection_date}; Sequence ID: {seq_id}"
+            description = f"Data for {collection_date}; Sequence ID: {seq_id}"
+            keywords = ["交工案", "資料蒐集", f"Sequence ID: {seq_id}", f"日期:{collection_date}"]
+            
+            collection_id = await self.api_client.create_collection(
+                title=title, description=description, keywords=keywords
+            )
+            
+            if not collection_id:
+                logger.error("流程管理 - 建立 Collection 失敗: ID=%s", seq_id)
+                return None
+            
+            pending_df = upload_df
+            logger.info(
+                "流程管理 - 新建 Collection: %s, 待上傳=%d 張",
+                collection_id, csv_total
+            )
+        
+        # ========================================
+        # 4. 執行影像上傳
+        # ========================================
+        uploaded_result = await self.uploader.upload_sequence(pending_df, collection_id)
         
         if uploaded_result and uploaded_result.get("successful", 0) > 0:
-            logger.info("流程管理 - 序列上傳成功: ID=%s, 成功=%d", seq_id, uploaded_result["successful"])
+            logger.info(
+                "流程管理 - 序列上傳完成: ID=%s, 本次成功=%d",
+                seq_id, uploaded_result["successful"]
+            )
             return collection_id
         
         return None
