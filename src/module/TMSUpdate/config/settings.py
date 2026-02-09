@@ -117,8 +117,42 @@ class Settings:
     # ========================================
     VEHICLE_TYPE: str = os.getenv("VEHICLE_TYPE", "CAR")
     
-    # 日期過濾 - 跳過早於此日期的資料 (格式: YYYY-MM-DD)
+    # ========================================
+    # 日期過濾設定
+    # ========================================
+    # 指定日期 - 只處理這些日期的資料 (最高優先)
+    # 格式: 單一日期 "2025-08-29" 或多日期 "2025-08-29,2025-08-30,2025-09-01"
+    # 設定此值後會忽略 CUTOFF_DATE
+    SPECIFIED_DATES: Optional[str] = os.getenv("SPECIFIED_DATES", "")
+    
+    # 截止日期 - 跳過早於此日期的資料 (格式: YYYY-MM-DD)
+    # 只有在 SPECIFIED_DATES 未設定時才生效
     CUTOFF_DATE: Optional[str] = os.getenv("CUTOFF_DATE", "2025-06-01")
+    
+    @classmethod
+    def get_specified_dates(cls) -> list:
+        """
+        解析 SPECIFIED_DATES 為日期列表
+        
+        Returns:
+            datetime.date 列表，空列表表示未設定
+        """
+        import datetime
+        
+        if not cls.SPECIFIED_DATES:
+            return []
+        
+        dates = []
+        for date_str in cls.SPECIFIED_DATES.split(','):
+            date_str = date_str.strip()
+            if date_str:
+                try:
+                    date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+                    dates.append(date)
+                except ValueError:
+                    print(f"警告: 日期格式錯誤: {date_str}")
+        
+        return sorted(set(dates))  # 去重並排序
 
     # ========================================
     # Docker & Hawser 資源監控設定 (新增)
@@ -228,6 +262,12 @@ class Settings:
         print(f"{'啟用 MD5 檢查':<35}: {cls.ENABLE_MD5_CHECK}")
         print(f"{'啟用資源監控':<35}: {cls.ENABLE_RESOURCE_MONITOR}")
         print(f"{'車輛類型':<35}: {cls.VEHICLE_TYPE}")
+        specified_dates = cls.get_specified_dates()
+        if specified_dates:
+            dates_str = ', '.join(str(d) for d in specified_dates)
+            print(f"{'指定日期':<35}: {dates_str} ({len(specified_dates)} 天)")
+        else:
+            print(f"{'指定日期':<35}: (未設定)")
         print(f"{'截止日期':<35}: {cls.CUTOFF_DATE}")
         print("=" * 80)
 

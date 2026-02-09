@@ -225,39 +225,66 @@ class GeoVisioUploadPipeline:
     def should_skip_date(
         self,
         collection_date: datetime.date,
-        cut_off_date: Optional[datetime.date] = None
     ) -> bool:
         """
         檢查是否應該跳過指定日期
         
+        支援三種模式 (依優先順序):
+        1. SPECIFIED_DATES: 只處理指定的日期列表 (最高優先)
+        2. CUTOFF_DATE: 跳過早於該日期的資料
+        3. 都未設定: 處理所有日期
+        
         Args:
             collection_date: 要檢查的日期
-            cut_off_date: 截止日期 (預設從 Settings.CUTOFF_DATE 讀取)
             
         Returns:
-            是否跳過
+            True = 跳過此日期, False = 處理此日期
         """
-        if cut_off_date is None:
-            # 從 Settings 讀取截止日期
-            cutoff_str = Settings.CUTOFF_DATE
-            if cutoff_str:
-                try:
-                    cut_off_date = datetime.datetime.strptime(cutoff_str, "%Y-%m-%d").date()
-                except ValueError:
-                    logger.warning("流程管理 - CUTOFF_DATE 格式錯誤: %s，使用預設值", cutoff_str)
-                    cut_off_date = datetime.date(2025, 6, 1)
+        # ========================================
+        # 模式 1: 指定日期列表 (最高優先)
+        # ========================================
+        specified_dates = Settings.get_specified_dates()
+        
+        if specified_dates:
+            if collection_date in specified_dates:
+                logger.info(
+                    "流程管理 - 處理指定日期: %s ✓ (共 %d 天待處理)",
+                    collection_date, len(specified_dates)
+                )
+                return False
             else:
-                cut_off_date = datetime.date(2025, 6, 1)
+                logger.info(
+                    "流程管理 - 跳過日期: %s (不在指定日期列表中)",
+                    collection_date
+                )
+                return True
         
-        skip = collection_date < cut_off_date
+        # ========================================
+        # 模式 2: 截止日期 (次優先)
+        # ========================================
+        cutoff_str = Settings.CUTOFF_DATE
         
-        if skip:
-            logger.info(
-                "流程管理 - 跳過日期: %s (早於 %s)",
-                collection_date, cut_off_date
-            )
+        if cutoff_str:
+            try:
+                cutoff_date = datetime.datetime.strptime(cutoff_str, "%Y-%m-%d").date()
+                
+                if collection_date < cutoff_date:
+                    logger.info(
+                        "流程管理 - 跳過日期: %s (早於截止日期 %s)",
+                        collection_date, cutoff_date
+                    )
+                    return True
+                    
+            except ValueError:
+                logger.warning(
+                    "流程管理 - CUTOFF_DATE 格式錯誤: %s，忽略此設定",
+                    cutoff_str
+                )
         
-        return skip
+        # ========================================
+        # 模式 3: 處理所有日期
+        # ========================================
+        return False
     
     async def upload_single_sequence(
         self,
