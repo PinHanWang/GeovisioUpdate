@@ -66,53 +66,27 @@ class GeoVisioAPIClient:
         self.headers = {"Accept-Encoding": "gzip, deflate, identity"}
         
         if auth_config:
-            logger.info("API 客戶端 - 初始化完成, URL: %s, OAuth: 啟用 (user=%s)", 
-                       self.base_url, auth_config.get('username', 'N/A'))
+            logger.info("API 客戶端 - 初始化完成, URL: %s, 認證: 啟用 (static token)", self.base_url)
         else:
-            logger.info("API 客戶端 - 初始化完成, URL: %s, OAuth: 未啟用", self.base_url)
+            logger.info("API 客戶端 - 初始化完成, URL: %s, 認證: 未啟用", self.base_url)
 
     async def get_token(self) -> Optional[str]:
         """
-        取得 OAuth access token，帶快取與自動重新整理
+        取得 GeoVisio API token
+        
+        使用靜態 JWT token（由 GeoVisio 內部產生，與 Keycloak 無關）
         
         Returns:
-            access_token 字串，失敗回傳 None
+            JWT token 字串，未設定則回傳 None
         """
         if not self.auth_config:
             return None
         
-        # token 還有效（提前 30 秒重新）
-        if self._access_token and time.time() < (self._token_expires_at - 30):
-            return self._access_token
+        # 直接回傳靜態 token
+        if "static_token" in self.auth_config:
+            return self.auth_config["static_token"]
         
-        try:
-            data = {
-                "grant_type": "password",
-                "client_id": self.auth_config["client_id"],
-                "client_secret": self.auth_config["client_secret"],
-                "username": self.auth_config["username"],
-                "password": self.auth_config["password"],
-            }
-            async with self.session.post(
-                self.auth_config["token_url"],
-                data=data,
-                timeout=aiohttp.ClientTimeout(total=10)
-            ) as resp:
-                if resp.status == 200:
-                    result = await resp.json()
-                    self._access_token = result["access_token"]
-                    # Keycloak 預設 token 有效期 300 秒
-                    expires_in = result.get("expires_in", 300)
-                    self._token_expires_at = time.time() + expires_in
-                    logger.info("OAuth token 取得成功 (有效期 %d 秒)", expires_in)
-                    return self._access_token
-                else:
-                    error_text = await resp.text()
-                    logger.error("OAuth token 取得失敗: HTTP %d, %s", resp.status, error_text)
-                    return None
-        except Exception as e:
-            logger.error("OAuth token 取得異常: %s", str(e))
-            return None
+        return None
 
     def _get_auth_headers(self) -> Dict[str, str]:
         """取得帶有 token 的 headers (同步版，用於已有 token 的場景)"""

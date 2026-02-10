@@ -22,14 +22,10 @@ class Settings:
     TMS_GEOVISIO_URL: str = os.getenv("TMS_GEOVISIO_URL", "")
     
     # ========================================
-    # OAuth 認證設定
+    # GeoVisio API 認證設定
     # ========================================
-    OAUTH_TOKEN_URL: str = os.getenv("OAUTH_TOKEN_URL", "")
-    OAUTH_CLIENT_ID: str = os.getenv("OAUTH_CLIENT_ID", "geovisio")
-    OAUTH_CLIENT_SECRET: str = os.getenv("OAUTH_CLIENT_SECRET", "")
-    OAUTH_USERNAME: str = os.getenv("OAUTH_USERNAME", "")
-    OAUTH_PASSWORD: str = os.getenv("OAUTH_PASSWORD", "")
     ENABLE_AUTH: bool = os.getenv("ENABLE_AUTH", "false").lower() == "true"
+    GEOVISIO_API_TOKEN: str = os.getenv("GEOVISIO_API_TOKEN", "")
 
     # ========================================
     # 檔案路徑設定
@@ -184,27 +180,14 @@ class Settings:
     
     @classmethod
     def get_auth_config(cls) -> Optional[dict]:
-        """
-        取得 OAuth 認證配置
-        
-        Returns:
-            認證配置字典，若未啟用認證則回傳 None
-        """
         if not cls.ENABLE_AUTH:
             return None
         
-        if not all([cls.OAUTH_TOKEN_URL, cls.OAUTH_CLIENT_ID, 
-                    cls.OAUTH_CLIENT_SECRET, cls.OAUTH_USERNAME, cls.OAUTH_PASSWORD]):
-            print("警告: ENABLE_AUTH=true 但 OAuth 設定不完整")
+        if not cls.GEOVISIO_API_TOKEN:
+            print("警告: ENABLE_AUTH=true 但 GEOVISIO_API_TOKEN 未設定")
             return None
         
-        return {
-            "token_url": cls.OAUTH_TOKEN_URL,
-            "client_id": cls.OAUTH_CLIENT_ID,
-            "client_secret": cls.OAUTH_CLIENT_SECRET,
-            "username": cls.OAUTH_USERNAME,
-            "password": cls.OAUTH_PASSWORD,
-        }
+        return {"static_token": cls.GEOVISIO_API_TOKEN}
 
     @classmethod
     def validate(cls) -> bool:
@@ -220,14 +203,10 @@ class Settings:
         if not cls.IMAGE_BASE_PATH:
             errors.append("IMAGE_BASE_PATH 未設定")
         
-        # 驗證 OAuth 設定
+        # 驗證認證設定
         if cls.ENABLE_AUTH:
-            if not cls.OAUTH_TOKEN_URL:
-                errors.append("ENABLE_AUTH=true 但 OAUTH_TOKEN_URL 未設定")
-            if not cls.OAUTH_USERNAME:
-                errors.append("ENABLE_AUTH=true 但 OAUTH_USERNAME 未設定")
-            if not cls.OAUTH_PASSWORD:
-                errors.append("ENABLE_AUTH=true 但 OAUTH_PASSWORD 未設定")
+            if not cls.GEOVISIO_API_TOKEN:
+                errors.append("ENABLE_AUTH=true 但 GEOVISIO_API_TOKEN 未設定")
         
         if errors:
             for error in errors:
@@ -307,11 +286,10 @@ class Settings:
         print(f"{'車輛類型':<35}: {cls.VEHICLE_TYPE}")
         print("-" * 80)
         print(f"{'啟用 OAuth 認證':<35}: {cls.ENABLE_AUTH}")
+        print(f"{'啟用 API 認證':<35}: {cls.ENABLE_AUTH}")
         if cls.ENABLE_AUTH:
-            print(f"{'OAuth Token URL':<35}: {cls.OAUTH_TOKEN_URL}")
-            print(f"{'OAuth Client ID':<35}: {cls.OAUTH_CLIENT_ID}")
-            print(f"{'OAuth Username':<35}: {cls.OAUTH_USERNAME}")
-            print(f"{'OAuth Password':<35}: {'*' * len(cls.OAUTH_PASSWORD) if cls.OAUTH_PASSWORD else '(未設定)'}")
+            token_display = cls.GEOVISIO_API_TOKEN[:20] + "..." if cls.GEOVISIO_API_TOKEN else "(未設定)"
+            print(f"{'GeoVisio API Token':<35}: {token_display}")
         specified_dates = cls.get_specified_dates()
         if specified_dates:
             dates_str = ', '.join(str(d) for d in specified_dates)
