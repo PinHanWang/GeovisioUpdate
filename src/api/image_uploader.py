@@ -317,6 +317,13 @@ class ImageUploader:
             raise FileNotFoundError(f"影像檔案不存在: {image_path}")
 
         try:
+            # 取得 OAuth token headers
+            auth_headers = {}
+            if self.api_client.auth_config:
+                token = await self.api_client.get_token()
+                if token:
+                    auth_headers["Authorization"] = f"Bearer {token}"
+            
             with open(image_path, 'rb') as img_file:
                 form_data = aiohttp.FormData()
                 form_data.add_field("position", str(seq))
@@ -334,7 +341,7 @@ class ImageUploader:
 
                 timeout = ClientTimeout(total=self.upload_timeout)
                 
-                async with session.post(url, data=form_data, timeout=timeout) as resp:
+                async with session.post(url, data=form_data, headers=auth_headers, timeout=timeout) as resp:
                     if resp.status in [200, 201, 202]:
                         logger.debug("影像上傳 - 成功: KeyName=%s", keyname)
                         return True

@@ -143,7 +143,8 @@ class GeoVisioUploadPipeline:
         
         self.api_client = GeoVisioAPIClient(
             base_url=self.config['tms_geovisio_url'],
-            session=self.session
+            session=self.session,
+            auth_config=Settings.get_auth_config()
         )
 
         # 3. 初始化其餘模組 (保持原邏輯)

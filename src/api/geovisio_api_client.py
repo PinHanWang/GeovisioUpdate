@@ -10,6 +10,7 @@ GeoVisio API 客戶端模組 (重構優化版)
 
 import json
 import os
+import time
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -44,31 +45,118 @@ class GeoVisioAPIClient:
         session: 外部傳入的 aiohttp.ClientSession 實例
     """
     
-    def __init__(self, base_url: str, session: aiohttp.ClientSession):
+    def __init__(self, base_url: str, session: aiohttp.ClientSession, auth_config: Optional[Dict] = None):
         """
         初始化 API 客戶端
         
         Args:
             base_url: GeoVisio API 基礎 URL
             session: aiohttp 連線會話 (建議由 Pipeline 統一管理生命週期)
+            auth_config: OAuth 認證配置，由 Settings.get_auth_config() 取得
         """
         self.base_url = base_url.rstrip('/')
         self.session = session
+        self.auth_config = auth_config
+        
+        # OAuth token 狀態
+        self._access_token: Optional[str] = None
+        self._token_expires_at: float = 0  # Unix timestamp
         
         # 修正編碼問題
         self.headers = {"Accept-Encoding": "gzip, deflate, identity"}
-        logger.info("API 客戶端 - 初始化完成, URL: %s", self.base_url)
+        
+        if auth_config:
+            logger.info("API 客戶端 - 初始化完成, URL: %s, OAuth: 啟用 (user=%s)", 
+                       self.base_url, auth_config.get('username', 'N/A'))
+        else:
+            logger.info("API 客戶端 - 初始化完成, URL: %s, OAuth: 未啟用", self.base_url)
+
+    async def get_token(self) -> Optional[str]:
+        """
+        取得 OAuth access token，帶快取與自動重新整理
+        
+        Returns:
+            access_token 字串，失敗回傳 None
+        """
+        if not self.auth_config:
+            return None
+        
+        # token 還有效（提前 30 秒重新）
+        if self._access_token and time.time() < (self._token_expires_at - 30):
+            return self._access_token
+        
+        try:
+            data = {
+                "grant_type": "password",
+                "client_id": self.auth_config["client_id"],
+                "client_secret": self.auth_config["client_secret"],
+                "username": self.auth_config["username"],
+                "password": self.auth_config["password"],
+            }
+            async with self.session.post(
+                self.auth_config["token_url"],
+                data=data,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    self._access_token = result["access_token"]
+                    # Keycloak 預設 token 有效期 300 秒
+                    expires_in = result.get("expires_in", 300)
+                    self._token_expires_at = time.time() + expires_in
+                    logger.info("OAuth token 取得成功 (有效期 %d 秒)", expires_in)
+                    return self._access_token
+                else:
+                    error_text = await resp.text()
+                    logger.error("OAuth token 取得失敗: HTTP %d, %s", resp.status, error_text)
+                    return None
+        except Exception as e:
+            logger.error("OAuth token 取得異常: %s", str(e))
+            return None
+
+    def _get_auth_headers(self) -> Dict[str, str]:
+        """取得帶有 token 的 headers (同步版，用於已有 token 的場景)"""
+        headers = {}
+        if self._access_token:
+            headers["Authorization"] = f"Bearer {self._access_token}"
+        return headers
 
     async def _request(self, method: str, path: str, **kwargs) -> Optional[Any]:
         """
-        統一請求處理封裝
+        統一請求處理封裝（帶 OAuth 認證）
         """
         url = f"{self.base_url}{path}"
         # 合併全域 headers
         kwargs['headers'] = {**self.headers, **kwargs.get('headers', {})}
         
+        # 加入 OAuth token
+        if self.auth_config:
+            token = await self.get_token()
+            if token:
+                kwargs['headers']['Authorization'] = f"Bearer {token}"
+        
         try:
             async with self.session.request(method, url, **kwargs) as response:
+                # 401 時重新取 token 並重試一次
+                if response.status == 401 and self.auth_config:
+                    logger.warning("API 認證失敗 (401)，重新取得 token...")
+                    self._access_token = None  # 強制重新取得
+                    token = await self.get_token()
+                    if token:
+                        kwargs['headers']['Authorization'] = f"Bearer {token}"
+                        async with self.session.request(method, url, **kwargs) as retry_resp:
+                            if retry_resp.status in [200, 201, 202]:
+                                return await retry_resp.json()
+                            error_text = await retry_resp.text()
+                            logger.error(
+                                "API 請求重試仍失敗 - Method: %s, Path: %s, Status: %d, Error: %s",
+                                method, path, retry_resp.status, error_text
+                            )
+                            return None
+                    else:
+                        logger.error("API 請求失敗 - 無法取得 token")
+                        return None
+                
                 if response.status in [200, 201, 202]:
                     return await response.json()
                 else:
