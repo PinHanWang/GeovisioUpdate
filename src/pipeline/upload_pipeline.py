@@ -46,7 +46,6 @@ class GeoVisioUploadPipeline:
         # ========================================
         self.config = {
             'tms_geovisio_url': Settings.TMS_GEOVISIO_URL,
-            'csv_file_path': Settings.CSV_FILE_PATH,
             'sequence_delay': Settings.SEQUENCE_DELAY,
             'batch_delay': Settings.BATCH_DELAY,
             'vehicle_type': Settings.VEHICLE_TYPE,
@@ -74,6 +73,7 @@ class GeoVisioUploadPipeline:
         self.stats = {
             'start_time': None,
             'end_time': None,
+            'total_csv': 0,
             'total_dates': 0,
             'total_sequences': 0,
             'successful_sequences': 0,
@@ -493,51 +493,92 @@ class GeoVisioUploadPipeline:
         
         return result
     
+    async def _process_single_csv(self, csv_path: Path, csv_index: int, csv_total: int):
+        """處理單一 CSV 檔案"""
+        logger.info("=" * 60)
+        logger.info("流程管理 - 處理 CSV [%d/%d]: %s", csv_index, csv_total, csv_path.name)
+        logger.info("=" * 60)
+        
+        processed_data = await self.process_csv_file(csv_path)
+        
+        if processed_data.empty:
+            logger.warning("流程管理 - CSV 無資料需處理: %s", csv_path.name)
+            return
+
+        grouped_data = self.group_by_date(processed_data)
+        num_dates = len(grouped_data)
+        self.stats['total_dates'] += num_dates
+        
+        logger.info("流程管理 - CSV %s 包含 %d 個日期組", csv_path.name, num_dates)
+        
+        for date_count, (collection_date, group) in enumerate(grouped_data, 1):
+            logger.info(
+                "流程管理 - [CSV %d/%d] 日期進度 [%d/%d]: %s",
+                csv_index, csv_total, date_count, num_dates, collection_date
+            )
+            
+            try:
+                result = await self.upload_date_group(collection_date, group)
+                if result:
+                    self.data_results.append(result)
+                    self.stats['total_sequences'] += result.get('total_seq', 0)
+                    self.stats['successful_sequences'] += result.get('successful_seq', 0)
+                    self.stats['failed_sequences'] += result.get('failed_seq', 0)
+                
+                del group
+                gc.collect()
+
+                if date_count < num_dates:
+                    await asyncio.sleep(self.config['batch_delay'])
+            
+            except asyncio.CancelledError:
+                logger.warning("流程管理 - 收到取消訊號，準備儲存進度...")
+                raise
+            except Exception as e:
+                logger.error("日期 %s 處理中斷: %s", collection_date, str(e))
+        
+        # 釋放 CSV 資料
+        del processed_data, grouped_data
+        gc.collect()
+        logger.info("流程管理 - CSV 處理完成: %s", csv_path.name)
+
     async def run(self):
-        """執行主流程"""
+        """執行主流程（支援多 CSV 批次處理）"""
         self.stats['start_time'] = time.time()
         
         try:
             self.validate_env()
             await self.initialize_modules()
             
-            csv_path = Path(self.config['csv_file_path'])
-            processed_data = await self.process_csv_file(csv_path)
-            
-            if processed_data.empty:
-                logger.warning("流程管理 - 無資料需處理")
+            csv_files = Settings.get_csv_files()
+            if not csv_files:
+                logger.error("流程管理 - 找不到任何 CSV 檔案")
                 return
-
-            grouped_data = self.group_by_date(processed_data)
-            num_dates = len(grouped_data)
-            self.stats['total_dates'] = num_dates
             
-            logger.info("流程管理 - 開始處理 %d 個日期組", num_dates)
+            csv_total = len(csv_files)
+            self.stats['total_csv'] = csv_total
+            logger.info("流程管理 - 共找到 %d 個 CSV 檔案待處理", csv_total)
+            for i, f in enumerate(csv_files, 1):
+                logger.info("  [%d] %s", i, f.name)
             
             self.data_results = []
-            for date_count, (collection_date, group) in enumerate(grouped_data, 1):
-                logger.info("流程管理 - 處理進度 [%d/%d]: %s", date_count, num_dates, collection_date)
-                
+            for csv_index, csv_path in enumerate(csv_files, 1):
                 try:
-                    result = await self.upload_date_group(collection_date, group)
-                    if result:
-                        self.data_results.append(result)
-                        self.stats['total_sequences'] += result.get('total_seq', 0)
-                        self.stats['successful_sequences'] += result.get('successful_seq', 0)
-                        self.stats['failed_sequences'] += result.get('failed_seq', 0)
+                    await self._process_single_csv(csv_path, csv_index, csv_total)
                     
-                    # 關鍵優化：每個日期分組處理完後，清理 group 引用並回收記憶體
-                    del group
-                    gc.collect()
-
-                    if date_count < num_dates:
+                    # CSV 間延遲
+                    if csv_index < csv_total:
+                        logger.info("流程管理 - CSV 間延遲 %d 秒...", self.config['batch_delay'])
                         await asyncio.sleep(self.config['batch_delay'])
-                
+                        
                 except asyncio.CancelledError:
-                    logger.warning("流程管理 - 收到取消訊號，準備儲存進度...")
+                    logger.warning("流程管理 - 任務被取消")
                     raise
                 except Exception as e:
-                    logger.error("日期 %s 處理中斷: %s", collection_date, str(e))
+                    logger.error(
+                        "流程管理 - CSV 處理失敗: %s, 錯誤: %s，繼續處理下一個",
+                        csv_path.name, str(e), exc_info=True
+                    )
 
         except asyncio.CancelledError:
             logger.warning("流程管理 - 任務被取消")
@@ -630,6 +671,7 @@ class GeoVisioUploadPipeline:
         logger.info("=" * 80)
         logger.info("最終處理摘要")
         logger.info("=" * 80)
+        logger.info("%-30s: %10d", "CSV 檔案總數", self.stats['total_csv'])
         logger.info("%-30s: %10d", "處理日期總數", self.stats['total_dates'])
         logger.info("%-30s: %10d", "序列總數", self.stats['total_sequences'])
         logger.info("%-30s: %10d", "成功序列", self.stats['successful_sequences'])

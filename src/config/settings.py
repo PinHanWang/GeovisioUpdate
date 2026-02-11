@@ -30,7 +30,8 @@ class Settings:
     # ========================================
     # 檔案路徑設定
     # ========================================
-    CSV_FILE_PATH: Optional[str] = os.getenv("CSV_FILE_PATH")
+    CSV_FOLDER_PATH: Optional[str] = os.getenv("CSV_FOLDER_PATH")
+    CSV_FILE_PATH: Optional[str] = os.getenv("CSV_FILE_PATH")  # 向下相容：單檔模式
     IMAGE_BASE_PATH: Optional[str] = os.getenv("IMAGE_BASE_PATH")
     
     # ========================================
@@ -179,6 +180,40 @@ class Settings:
 
     
     @classmethod
+    def get_csv_files(cls) -> list:
+        """
+        取得要處理的 CSV 檔案列表
+        
+        優先順序:
+        1. CSV_FOLDER_PATH - 掃描資料夾內所有 .csv 檔案
+        2. CSV_FILE_PATH - 單一檔案 (向下相容)
+        
+        Returns:
+            Path 列表，依檔名排序
+        """
+        from pathlib import Path
+        
+        if cls.CSV_FOLDER_PATH:
+            folder = Path(cls.CSV_FOLDER_PATH)
+            if not folder.exists():
+                print(f"錯誤: CSV 資料夾不存在: {folder}")
+                return []
+            csv_files = sorted(folder.glob("*.csv"))
+            if not csv_files:
+                print(f"警告: CSV 資料夾內無 .csv 檔案: {folder}")
+            return csv_files
+        
+        if cls.CSV_FILE_PATH:
+            p = Path(cls.CSV_FILE_PATH)
+            if p.exists():
+                return [p]
+            else:
+                print(f"錯誤: CSV 檔案不存在: {p}")
+                return []
+        
+        return []
+
+    @classmethod
     def get_auth_config(cls) -> Optional[dict]:
         if not cls.ENABLE_AUTH:
             return None
@@ -197,8 +232,8 @@ class Settings:
         if not cls.TMS_GEOVISIO_URL:
             errors.append("TMS_GEOVISIO_URL 未設定")
         
-        if not cls.CSV_FILE_PATH:
-            errors.append("CSV_FILE_PATH 未設定")
+        if not cls.CSV_FOLDER_PATH and not cls.CSV_FILE_PATH:
+            errors.append("CSV_FOLDER_PATH 或 CSV_FILE_PATH 至少需設定一個")
         
         if not cls.IMAGE_BASE_PATH:
             errors.append("IMAGE_BASE_PATH 未設定")
@@ -255,7 +290,10 @@ class Settings:
         print("GeoVisio 上傳系統設定")
         print("=" * 80)
         print(f"{'API URL':<35}: {cls.TMS_GEOVISIO_URL}")
-        print(f"{'CSV 路徑':<35}: {cls.CSV_FILE_PATH}")
+        if cls.CSV_FOLDER_PATH:
+            print(f"{'CSV 資料夾':<35}: {cls.CSV_FOLDER_PATH}")
+        if cls.CSV_FILE_PATH:
+            print(f"{'CSV 檔案 (單檔)':<35}: {cls.CSV_FILE_PATH}")
         print(f"{'影像路徑':<35}: {cls.IMAGE_BASE_PATH}")
         print("-" * 80)
         print(f"{'最大並發上傳數':<35}: {cls.MAX_CONCURRENT_UPLOADS}")
