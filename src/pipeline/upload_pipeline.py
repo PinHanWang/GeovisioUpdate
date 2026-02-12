@@ -57,6 +57,7 @@ class GeoVisioUploadPipeline:
             'connect_timeout': Settings.CONNECT_TIMEOUT,
             'read_timeout': Settings.READ_TIMEOUT,
             'keepalive_timeout': Settings.KEEPALIVE_TIMEOUT,
+            'project_name': Settings.PROJECT_NAME,
         }
         
         # ========================================
@@ -375,7 +376,7 @@ class GeoVisioUploadPipeline:
                 collection_id = existing_collection_id
         else:
             # 新序列：建立新 Collection
-            title = f"交工案第一分案(10米道路) Date: {collection_date}; Sequence ID: {seq_id}"
+            title = f"{self.config['project_name']} Date: {collection_date}; Sequence ID: {seq_id}"
             description = f"Data for {collection_date}; Sequence ID: {seq_id}"
             keywords = ["交工案", "資料蒐集", f"Sequence ID: {seq_id}", f"日期:{collection_date}"]
             

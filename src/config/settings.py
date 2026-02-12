@@ -135,6 +135,12 @@ class Settings:
     # 截止日期 - 跳過早於此日期的資料 (格式: YYYY-MM-DD)
     # 只有在 SPECIFIED_DATES 未設定時才生效
     CUTOFF_DATE: Optional[str] = os.getenv("CUTOFF_DATE", "")
+
+
+    # ========================================
+    # 專案名稱設定 (新增)
+    # ========================================
+    PROJECT_NAME: str = os.getenv("PROJECT_NAME", "DefaultProject")
     
     @classmethod
     def get_specified_dates(cls) -> list:
