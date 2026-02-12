@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 
 # 找到專案根目錄的 .env 檔案
 script_dir = Path(__file__).resolve().parent
-project_root = script_dir.parent.parent.parent.parent
+project_root = script_dir.parent.parent
 env_path = project_root / '.env'
 
 print(f"📂 專案根目錄: {project_root}")
