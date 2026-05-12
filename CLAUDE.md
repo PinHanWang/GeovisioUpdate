@@ -112,7 +112,7 @@ GeoVisio 使用**內部 HS256 JWT token**（非 Keycloak OAuth）。Token 需在
 
 ## 目前開發狀態
 
-- **已完成**：批次上傳、斷點續傳、去重（KeyName + MD5）、資源監控（Job Queue 節流）、多 CSV 匯入、Docker 容器監控
+- **已完成**：批次上傳、斷點續傳、去重（KeyName + MD5）、資源監控（Job Queue 節流）、多 CSV 匯入、Docker 容器監控、設定分層（`.env` 僅保留環境特定值，可調校參數移至 `config.toml`）
 - **進行中**：<!-- 填入目前在做什麼 -->
 - **已知問題**：<!-- 填入目前有哪些 bug 或待解決問題 -->
 
@@ -133,7 +133,9 @@ GeoVisio 使用**內部 HS256 JWT token**（非 Keycloak OAuth）。Token 需在
 - **所有設定集中在 `Settings` class**（[src/config/settings.py](src/config/settings.py)），其他模組一律用 `Settings.ATTR_NAME`，不直接呼叫 `os.getenv()`
 - **非同步全程用 `async/await + aiohttp`**；`aiohttp.ClientSession` 由 `GeoVisioUploadPipeline` 統一建立並注入子模組，不在子模組內自行建立
 - **重試機制用 `tenacity`**（指數退避），不手寫 sleep-retry 迴圈
-- **新增環境變數**：先加到 `Settings` class → 再加到 `.env.example`（含說明註解）→ 最後更新 README.md 設定參數表
+- **新增設定參數**：判斷類型後依對應流程操作
+  - 環境特定值（URL、路徑、Token、密碼）：加到 `Settings` class（`os.getenv()`）→ 加到 `.env.example`
+  - 可調校預設值（速度、批次、重試等）：加到 `config.toml` → 加到 `Settings` class（`_env_int/bool/str()`，支援 env var 覆蓋）
 
 ## 常見問題與解法
 
