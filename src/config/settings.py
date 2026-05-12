@@ -1,11 +1,13 @@
 """
-全域設定模組 (重構版)
+全域設定模組
 
-集中管理所有環境變數和設定值
-所有模組應該統一從這裡讀取設定，避免重複的 os.getenv() 調用
+優先順序：.env 環境變數 > config.toml > 程式碼內建預設值
+- 環境特定值（URL、路徑、Token）：只在 .env 設定
+- 可調校參數（速度、批次、重試）：預設值在 config.toml，需要時可在 .env 覆蓋
 """
 
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
@@ -13,192 +15,218 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+# ============================================================
+# TOML 設定載入
+# ============================================================
+_CONFIG_FILE = Path(__file__).parent.parent.parent / "config.toml"
+
+
+def _load_toml() -> dict:
+    if not _CONFIG_FILE.exists():
+        return {}
+    if sys.version_info >= (3, 11):
+        import tomllib
+        with open(_CONFIG_FILE, "rb") as f:
+            return tomllib.load(f)
+    try:
+        import tomli
+        with open(_CONFIG_FILE, "rb") as f:
+            return tomli.load(f)
+    except ImportError:
+        print("警告: 找不到 tomli 套件，請執行 pip install tomli")
+        return {}
+
+
+_cfg = _load_toml()
+
+
+def _cfg_get(path: str):
+    """以點分隔路徑取得 TOML 設定值，例如 'upload.max_concurrent'"""
+    val = _cfg
+    for part in path.split("."):
+        if isinstance(val, dict) and part in val:
+            val = val[part]
+        else:
+            return None
+    return val
+
+
+def _env_int(env_key: str, cfg_path: str, default: int) -> int:
+    v = os.getenv(env_key)
+    if v is not None:
+        return int(v)
+    c = _cfg_get(cfg_path)
+    return int(c) if c is not None else default
+
+
+def _env_bool(env_key: str, cfg_path: str, default: bool) -> bool:
+    v = os.getenv(env_key)
+    if v is not None:
+        return v.lower() == "true"
+    c = _cfg_get(cfg_path)
+    return bool(c) if c is not None else default
+
+
+def _env_str(env_key: str, cfg_path: str, default: str) -> str:
+    v = os.getenv(env_key)
+    if v is not None:
+        return v
+    c = _cfg_get(cfg_path)
+    return str(c) if c is not None else default
+
+
+# ============================================================
 class Settings:
-    """應用程式設定 - 集中管理所有環境變數"""
-    
+    """應用程式設定 — 集中管理所有設定值"""
+
     # ========================================
-    # GeoVisio API 設定
+    # GeoVisio API 設定（必填，.env 設定）
     # ========================================
     TMS_GEOVISIO_URL: str = os.getenv("TMS_GEOVISIO_URL", "")
-    
+
     # ========================================
-    # GeoVisio API 認證設定
+    # 認證設定（.env 設定）
     # ========================================
     ENABLE_AUTH: bool = os.getenv("ENABLE_AUTH", "false").lower() == "true"
     GEOVISIO_API_TOKEN: str = os.getenv("GEOVISIO_API_TOKEN", "")
 
     # ========================================
-    # 檔案路徑設定
+    # 檔案路徑設定（必填，.env 設定）
     # ========================================
     CSV_FOLDER_PATH: Optional[str] = os.getenv("CSV_FOLDER_PATH")
-    CSV_FILE_PATH: Optional[str] = os.getenv("CSV_FILE_PATH")  # 向下相容：單檔模式
+    CSV_FILE_PATH: Optional[str] = os.getenv("CSV_FILE_PATH")
     IMAGE_BASE_PATH: Optional[str] = os.getenv("IMAGE_BASE_PATH")
-    
+
     # ========================================
-    # 資料庫設定
+    # 資料庫設定（必填，.env 設定）
     # ========================================
     DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
-    
-    # ========================================
-    # 上傳核心參數 (影響速度的關鍵參數)
-    # ========================================
-    # 最大並發上傳數 - 增加此值可提高上傳速度，但會增加 API 負載
-    # 建議範圍: 5-20，API 使用 Gunicorn 後可設為 10-20
-    MAX_CONCURRENT_UPLOADS: int = int(os.getenv("MAX_CONCURRENT_UPLOADS", "5"))
-    UPLOAD_TIMEOUT: int = int(os.getenv("UPLOAD_TIMEOUT", "60")) # 單張圖片上傳超時時間 (秒)
-    SEQUENCE_DELAY: int = int(os.getenv("SEQUENCE_DELAY", "3")) # 序列間延遲 (秒) - 減少此值可加快速度
-    BATCH_DELAY: int = int(os.getenv("BATCH_DELAY", "300")) # 日期組間延遲 (秒) - 這是最大的時間消耗，可大幅降低
-    
-    # ========================================
-    # 連線池設定
-    # ========================================
-    # aiohttp 連線池大小 - 應大於等於 MAX_CONCURRENT_UPLOADS
-    MAX_POOL_SIZE: int = int(os.getenv("MAX_POOL_SIZE", "10"))
 
     # ========================================
-    # 連線與超時設定 (新增) <-- 插入位置 1
-    # ========================================
-    DNS_CACHE_TTL: int = int(os.getenv("DNS_CACHE_TTL", "300"))
-    CONNECT_TIMEOUT: int = int(os.getenv("CONNECT_TIMEOUT", "10"))
-    READ_TIMEOUT: int = int(os.getenv("READ_TIMEOUT", "60"))
-    KEEPALIVE_TIMEOUT: int = int(os.getenv("KEEPALIVE_TIMEOUT", "30"))
-    
-    # ========================================
-    # 重試設定 (新增) <-- 插入位置 2
-    # ========================================
-    RETRY_ATTEMPTS: int = int(os.getenv("RETRY_ATTEMPTS", "5"))  # 從 3 改為 5
-    RETRY_MIN_WAIT: int = int(os.getenv("RETRY_MIN_WAIT", "1"))  # 最小等待秒數
-    RETRY_MAX_WAIT: int = int(os.getenv("RETRY_MAX_WAIT", "30"))  # 最大等待秒數
-    RETRY_DELAY: int = int(os.getenv("RETRY_DELAY", "2"))
-
-    # ========================================
-    # 批次處理策略 (根據序列大小動態調整)
-    # ========================================
-    SEQUENCE_SMALL_THRESHOLD: int = int(os.getenv("SEQUENCE_SMALL_THRESHOLD", "500")) # 小型序列閾值 (< 此值為小型)
-    SEQUENCE_MEDIUM_THRESHOLD: int = int(os.getenv("SEQUENCE_MEDIUM_THRESHOLD", "2000")) # 中型序列閾值 (< 此值為中型，>= 此值為大型)
-    
-    # 小型序列配置
-    BATCH_SIZE_SMALL: int = int(os.getenv("BATCH_SIZE_SMALL", "50"))
-    BATCH_DELAY_SMALL: int = int(os.getenv("BATCH_DELAY_SMALL", "10"))
-    CONCURRENT_SMALL: int = int(os.getenv("CONCURRENT_SMALL", "3"))
-    
-    # 中型序列配置
-    BATCH_SIZE_MEDIUM: int = int(os.getenv("BATCH_SIZE_MEDIUM", "30"))
-    BATCH_DELAY_MEDIUM: int = int(os.getenv("BATCH_DELAY_MEDIUM", "15"))
-    CONCURRENT_MEDIUM: int = int(os.getenv("CONCURRENT_MEDIUM", "2"))
-    
-    # 大型序列配置
-    BATCH_SIZE_LARGE: int = int(os.getenv("BATCH_SIZE_LARGE", "20"))
-    BATCH_DELAY_LARGE: int = int(os.getenv("BATCH_DELAY_LARGE", "20"))
-    CONCURRENT_LARGE: int = int(os.getenv("CONCURRENT_LARGE", "1"))
-    
-    # ========================================
-    # 資源監控閾值 (基於 Job Queue 積壓數量)
-    # ========================================
-    JOB_QUEUE_SAFE_THRESHOLD: int = int(os.getenv("JOB_QUEUE_SAFE_THRESHOLD", "100")) # 安全閾值 - Job Queue < 此值時全速運行
-    JOB_QUEUE_WARNING_THRESHOLD: int = int(os.getenv("JOB_QUEUE_WARNING_THRESHOLD", "500")) # 警告閾值 - Job Queue >= 此值時減速
-    RESOURCE_CHECK_INTERVAL: int = int(os.getenv("RESOURCE_CHECK_INTERVAL", "60")) # 資源檢查間隔 (秒)
-    
-    # ========================================
-    # 去重檢查設定
-    # ========================================
-    DEDUP_MAX_CACHE_SIZE: int = int(os.getenv("DEDUP_MAX_CACHE_SIZE", "100000")) # 最大快取大小 (KeyName 和 MD5 各自的上限)
-    DEDUP_PRELOAD_LIMIT: int = int(os.getenv("DEDUP_PRELOAD_LIMIT", "50000")) # 啟動時載入的快取數量
-    
-    # ========================================
-    # 去重失敗行為 (新增) <-- 插入位置 3
-    # ========================================
-    # "continue" = 去重檢查失敗時繼續上傳
-    # "skip" = 去重檢查失敗時跳過上傳（更保守）
-    DEDUP_FAILURE_BEHAVIOR: str = os.getenv("DEDUP_FAILURE_BEHAVIOR", "continue")
-
-    # ========================================
-    # 功能開關
-    # ========================================
-    ENABLE_DEDUPLICATION: bool = os.getenv("ENABLE_DEDUPLICATION", "true").lower() == "true"
-    ENABLE_MD5_CHECK: bool = os.getenv("ENABLE_MD5_CHECK", "true").lower() == "true"
-    ENABLE_RESOURCE_MONITOR: bool = os.getenv("ENABLE_RESOURCE_MONITOR", "true").lower() == "true"
-    
-    # ========================================
-    # 資料預處理設定
-    # ========================================
-    VEHICLE_TYPE: str = os.getenv("VEHICLE_TYPE", "CAR")
-    
-    # ========================================
-    # 日期過濾設定
-    # ========================================
-    # 指定日期 - 只處理這些日期的資料 (最高優先)
-    # 格式: 單一日期 "2025-08-29" 或多日期 "2025-08-29,2025-08-30,2025-09-01"
-    # 設定此值後會忽略 CUTOFF_DATE
-    SPECIFIED_DATES: Optional[str] = os.getenv("SPECIFIED_DATES", "")
-    
-    # 截止日期 - 跳過早於此日期的資料 (格式: YYYY-MM-DD)
-    # 只有在 SPECIFIED_DATES 未設定時才生效
-    CUTOFF_DATE: Optional[str] = os.getenv("CUTOFF_DATE", "")
-
-
-    # ========================================
-    # 專案名稱設定 (新增)
+    # 專案與資料預處理設定（.env 設定）
     # ========================================
     PROJECT_NAME: str = os.getenv("PROJECT_NAME", "DefaultProject")
-    
+    VEHICLE_TYPE: str = os.getenv("VEHICLE_TYPE", "CAR")
+
+    # ========================================
+    # 日期過濾設定（.env 設定，每次執行可能不同）
+    # ========================================
+    SPECIFIED_DATES: Optional[str] = os.getenv("SPECIFIED_DATES", "")
+    CUTOFF_DATE: Optional[str] = os.getenv("CUTOFF_DATE", "")
+
+    # ========================================
+    # Discord 通知（選用，.env 設定）
+    # ========================================
+    DISCORD_BOT_TOKEN: Optional[str] = os.getenv("DISCORD_BOT_TOKEN")
+    DISCORD_CHANNEL_ID: Optional[str] = os.getenv("DISCORD_CHANNEL_ID")
+
+    # ========================================
+    # Docker 監控 — 環境特定值（.env 設定）
+    # ========================================
+    DOCKER_TARGET_IP: str = os.getenv("DOCKER_TARGET_IP", "192.168.61.3")
+
+    # ========================================
+    # 上傳核心參數（config.toml，可用 .env 覆蓋）
+    # ========================================
+    MAX_CONCURRENT_UPLOADS: int = _env_int("MAX_CONCURRENT_UPLOADS", "upload.max_concurrent", 10)
+    UPLOAD_TIMEOUT: int        = _env_int("UPLOAD_TIMEOUT",          "upload.timeout",        60)
+    SEQUENCE_DELAY: int        = _env_int("SEQUENCE_DELAY",          "upload.sequence_delay", 2)
+    BATCH_DELAY: int           = _env_int("BATCH_DELAY",             "upload.batch_delay",    120)
+
+    # ========================================
+    # 連線設定（config.toml，可用 .env 覆蓋）
+    # ========================================
+    MAX_POOL_SIZE: int      = _env_int("MAX_POOL_SIZE",      "connection.max_pool_size",    20)
+    DNS_CACHE_TTL: int      = _env_int("DNS_CACHE_TTL",      "connection.dns_cache_ttl",    300)
+    CONNECT_TIMEOUT: int    = _env_int("CONNECT_TIMEOUT",    "connection.connect_timeout",  10)
+    READ_TIMEOUT: int       = _env_int("READ_TIMEOUT",       "connection.read_timeout",     60)
+    KEEPALIVE_TIMEOUT: int  = _env_int("KEEPALIVE_TIMEOUT",  "connection.keepalive_timeout", 30)
+
+    # ========================================
+    # 重試設定（config.toml，可用 .env 覆蓋）
+    # ========================================
+    RETRY_ATTEMPTS: int  = _env_int("RETRY_ATTEMPTS",  "retry.attempts",  3)
+    RETRY_MIN_WAIT: int  = _env_int("RETRY_MIN_WAIT",  "retry.min_wait",  1)
+    RETRY_MAX_WAIT: int  = _env_int("RETRY_MAX_WAIT",  "retry.max_wait",  30)
+    RETRY_DELAY: int     = _env_int("RETRY_DELAY",     "retry.delay",     2)
+
+    # ========================================
+    # 批次處理策略（config.toml，可用 .env 覆蓋）
+    # ========================================
+    SEQUENCE_SMALL_THRESHOLD: int  = _env_int("SEQUENCE_SMALL_THRESHOLD",  "batch.small_threshold",  500)
+    SEQUENCE_MEDIUM_THRESHOLD: int = _env_int("SEQUENCE_MEDIUM_THRESHOLD", "batch.medium_threshold", 2000)
+
+    BATCH_SIZE_SMALL: int    = _env_int("BATCH_SIZE_SMALL",    "batch.small.size",       100)
+    BATCH_DELAY_SMALL: int   = _env_int("BATCH_DELAY_SMALL",   "batch.small.delay",      5)
+    CONCURRENT_SMALL: int    = _env_int("CONCURRENT_SMALL",    "batch.small.concurrent", 5)
+
+    BATCH_SIZE_MEDIUM: int   = _env_int("BATCH_SIZE_MEDIUM",   "batch.medium.size",       50)
+    BATCH_DELAY_MEDIUM: int  = _env_int("BATCH_DELAY_MEDIUM",  "batch.medium.delay",      10)
+    CONCURRENT_MEDIUM: int   = _env_int("CONCURRENT_MEDIUM",   "batch.medium.concurrent", 3)
+
+    BATCH_SIZE_LARGE: int    = _env_int("BATCH_SIZE_LARGE",    "batch.large.size",       30)
+    BATCH_DELAY_LARGE: int   = _env_int("BATCH_DELAY_LARGE",   "batch.large.delay",      15)
+    CONCURRENT_LARGE: int    = _env_int("CONCURRENT_LARGE",    "batch.large.concurrent", 2)
+
+    # ========================================
+    # 資源監控閾值（config.toml，可用 .env 覆蓋）
+    # ========================================
+    JOB_QUEUE_SAFE_THRESHOLD: int    = _env_int("JOB_QUEUE_SAFE_THRESHOLD",    "monitor.job_queue_safe_threshold",    200)
+    JOB_QUEUE_WARNING_THRESHOLD: int = _env_int("JOB_QUEUE_WARNING_THRESHOLD", "monitor.job_queue_warning_threshold", 1000)
+    RESOURCE_CHECK_INTERVAL: int     = _env_int("RESOURCE_CHECK_INTERVAL",     "monitor.resource_check_interval",     60)
+
+    # ========================================
+    # 去重檢查設定（config.toml，可用 .env 覆蓋）
+    # ========================================
+    DEDUP_MAX_CACHE_SIZE: int  = _env_int("DEDUP_MAX_CACHE_SIZE",  "dedup.max_cache_size",  100000)
+    DEDUP_PRELOAD_LIMIT: int   = _env_int("DEDUP_PRELOAD_LIMIT",   "dedup.preload_limit",   50000)
+    DEDUP_FAILURE_BEHAVIOR: str = _env_str("DEDUP_FAILURE_BEHAVIOR", "dedup.failure_behavior", "continue")
+
+    # ========================================
+    # 功能開關（config.toml，可用 .env 覆蓋）
+    # ========================================
+    ENABLE_DEDUPLICATION: bool    = _env_bool("ENABLE_DEDUPLICATION",    "features.enable_deduplication",    True)
+    ENABLE_MD5_CHECK: bool        = _env_bool("ENABLE_MD5_CHECK",        "features.enable_md5_check",        True)
+    ENABLE_RESOURCE_MONITOR: bool = _env_bool("ENABLE_RESOURCE_MONITOR", "features.enable_resource_monitor", True)
+
+    # ========================================
+    # Docker 容器監控 — 調校值（config.toml，可用 .env 覆蓋）
+    # ========================================
+    DOCKER_CONTAINER_NAME: str       = _env_str("DOCKER_CONTAINER_NAME",       "docker.container_name",         "geovisio_service")
+    HAWSER_PORT: int                 = _env_int("HAWSER_PORT",                 "docker.hawser_port",            2376)
+    MONITOR_INTERVAL: int            = _env_int("MONITOR_INTERVAL",            "docker.monitor_interval",       300)
+    MONITOR_MEM_THRESHOLD_MB: int    = _env_int("MONITOR_MEM_THRESHOLD_MB",    "docker.monitor_mem_threshold_mb", 3072)
+
+    # ============================================================
+
     @classmethod
     def get_specified_dates(cls) -> list:
-        """
-        解析 SPECIFIED_DATES 為日期列表
-        
-        Returns:
-            datetime.date 列表，空列表表示未設定
-        """
+        """解析 SPECIFIED_DATES 為 datetime.date 列表"""
         import datetime
-        
+
         if not cls.SPECIFIED_DATES:
             return []
-        
+
         dates = []
-        for date_str in cls.SPECIFIED_DATES.split(','):
+        for date_str in cls.SPECIFIED_DATES.split(","):
             date_str = date_str.strip()
             if date_str:
                 try:
-                    date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
-                    dates.append(date)
+                    dates.append(datetime.datetime.strptime(date_str, "%Y-%m-%d").date())
                 except ValueError:
                     print(f"警告: 日期格式錯誤: {date_str}")
-        
-        return sorted(set(dates))  # 去重並排序
 
-    # ========================================
-    # Docker & Hawser 資源監控設定 (新增)
-    # ========================================
-    DOCKER_TARGET_IP: str = os.getenv("DOCKER_TARGET_IP", "192.168.61.3")
-    DOCKER_CONTAINER_NAME: str = os.getenv("DOCKER_CONTAINER_NAME", "geovisio_service")
-    # Hawser API 連接埠 (2376)
-    HAWSER_PORT: int = int(os.getenv("HAWSER_PORT", "2376"))
-    
-    # Discord 通知設定
-    DISCORD_BOT_TOKEN: Optional[str] = os.getenv("DISCORD_BOT_TOKEN")
-    DISCORD_CHANNEL_ID: Optional[str] = os.getenv("DISCORD_CHANNEL_ID")
-    
-    # 監控邏輯參數
-    MONITOR_INTERVAL: int = int(os.getenv("MONITOR_INTERVAL", "300")) # 預設 5 分鐘
-    MONITOR_MEM_THRESHOLD_MB: int = int(os.getenv("MONITOR_MEM_THRESHOLD_MB", "3072")) # 3GB 告警
-    
+        return sorted(set(dates))
 
-    
     @classmethod
     def get_csv_files(cls) -> list:
         """
         取得要處理的 CSV 檔案列表
-        
+
         優先順序:
-        1. CSV_FOLDER_PATH - 掃描資料夾內所有 .csv 檔案
-        2. CSV_FILE_PATH - 單一檔案 (向下相容)
-        
-        Returns:
-            Path 列表，依檔名排序
+        1. CSV_FOLDER_PATH — 掃描資料夾內所有 .csv 檔案
+        2. CSV_FILE_PATH   — 單一檔案（向下相容）
         """
-        from pathlib import Path
-        
         if cls.CSV_FOLDER_PATH:
             folder = Path(cls.CSV_FOLDER_PATH)
             if not folder.exists():
@@ -208,92 +236,83 @@ class Settings:
             if not csv_files:
                 print(f"警告: CSV 資料夾內無 .csv 檔案: {folder}")
             return csv_files
-        
+
         if cls.CSV_FILE_PATH:
             p = Path(cls.CSV_FILE_PATH)
             if p.exists():
                 return [p]
-            else:
-                print(f"錯誤: CSV 檔案不存在: {p}")
-                return []
-        
+            print(f"錯誤: CSV 檔案不存在: {p}")
+            return []
+
         return []
 
     @classmethod
     def get_auth_config(cls) -> Optional[dict]:
         if not cls.ENABLE_AUTH:
             return None
-        
+
         if not cls.GEOVISIO_API_TOKEN:
             print("警告: ENABLE_AUTH=true 但 GEOVISIO_API_TOKEN 未設定")
             return None
-        
+
         return {"static_token": cls.GEOVISIO_API_TOKEN}
 
     @classmethod
     def validate(cls) -> bool:
         """驗證必要設定"""
         errors = []
-        
+
         if not cls.TMS_GEOVISIO_URL:
             errors.append("TMS_GEOVISIO_URL 未設定")
-        
+
         if not cls.CSV_FOLDER_PATH and not cls.CSV_FILE_PATH:
             errors.append("CSV_FOLDER_PATH 或 CSV_FILE_PATH 至少需設定一個")
-        
+
         if not cls.IMAGE_BASE_PATH:
             errors.append("IMAGE_BASE_PATH 未設定")
-        
-        # 驗證認證設定
-        if cls.ENABLE_AUTH:
-            if not cls.GEOVISIO_API_TOKEN:
-                errors.append("ENABLE_AUTH=true 但 GEOVISIO_API_TOKEN 未設定")
-        
+
+        if cls.ENABLE_AUTH and not cls.GEOVISIO_API_TOKEN:
+            errors.append("ENABLE_AUTH=true 但 GEOVISIO_API_TOKEN 未設定")
+
         if errors:
             for error in errors:
                 print(f"設定錯誤: {error}")
             return False
-        
+
         return True
-    
+
     @classmethod
     def get_batch_config(cls, size: int) -> dict:
-        """
-        根據序列大小取得批次配置
-        
-        Args:
-            size: 序列中的影像數量
-            
-        Returns:
-            配置字典
-        """
+        """根據序列大小取得批次配置"""
         if size < cls.SEQUENCE_SMALL_THRESHOLD:
             return {
-                'batch_size': cls.BATCH_SIZE_SMALL,
-                'batch_delay': cls.BATCH_DELAY_SMALL,
-                'max_concurrent': cls.CONCURRENT_SMALL,
-                'description': f'小型序列 (< {cls.SEQUENCE_SMALL_THRESHOLD} 張)'
+                "batch_size": cls.BATCH_SIZE_SMALL,
+                "batch_delay": cls.BATCH_DELAY_SMALL,
+                "max_concurrent": cls.CONCURRENT_SMALL,
+                "description": f"小型序列 (< {cls.SEQUENCE_SMALL_THRESHOLD} 張)",
             }
         elif size < cls.SEQUENCE_MEDIUM_THRESHOLD:
             return {
-                'batch_size': cls.BATCH_SIZE_MEDIUM,
-                'batch_delay': cls.BATCH_DELAY_MEDIUM,
-                'max_concurrent': cls.CONCURRENT_MEDIUM,
-                'description': f'中型序列 ({cls.SEQUENCE_SMALL_THRESHOLD}-{cls.SEQUENCE_MEDIUM_THRESHOLD} 張)'
+                "batch_size": cls.BATCH_SIZE_MEDIUM,
+                "batch_delay": cls.BATCH_DELAY_MEDIUM,
+                "max_concurrent": cls.CONCURRENT_MEDIUM,
+                "description": f"中型序列 ({cls.SEQUENCE_SMALL_THRESHOLD}–{cls.SEQUENCE_MEDIUM_THRESHOLD} 張)",
             }
         else:
             return {
-                'batch_size': cls.BATCH_SIZE_LARGE,
-                'batch_delay': cls.BATCH_DELAY_LARGE,
-                'max_concurrent': cls.CONCURRENT_LARGE,
-                'description': f'大型序列 (> {cls.SEQUENCE_MEDIUM_THRESHOLD} 張)'
+                "batch_size": cls.BATCH_SIZE_LARGE,
+                "batch_delay": cls.BATCH_DELAY_LARGE,
+                "max_concurrent": cls.CONCURRENT_LARGE,
+                "description": f"大型序列 (> {cls.SEQUENCE_MEDIUM_THRESHOLD} 張)",
             }
-    
+
     @classmethod
     def print_config(cls):
-        """列印目前的設定值 (用於除錯)"""
+        """列印目前的設定值（用於除錯）"""
+        cfg_source = "✓" if _CONFIG_FILE.exists() else "✗ (未找到 config.toml，使用內建預設值)"
         print("=" * 80)
         print("GeoVisio 上傳系統設定")
+        print(f"config.toml: {cfg_source}")
         print("=" * 80)
         print(f"{'API URL':<35}: {cls.TMS_GEOVISIO_URL}")
         if cls.CSV_FOLDER_PATH:
@@ -301,6 +320,7 @@ class Settings:
         if cls.CSV_FILE_PATH:
             print(f"{'CSV 檔案 (單檔)':<35}: {cls.CSV_FILE_PATH}")
         print(f"{'影像路徑':<35}: {cls.IMAGE_BASE_PATH}")
+        print(f"{'車輛類型':<35}: {cls.VEHICLE_TYPE}")
         print("-" * 80)
         print(f"{'最大並發上傳數':<35}: {cls.MAX_CONCURRENT_UPLOADS}")
         print(f"{'上傳超時 (秒)':<35}: {cls.UPLOAD_TIMEOUT}")
@@ -308,18 +328,13 @@ class Settings:
         print(f"{'日期間延遲 (秒)':<35}: {cls.BATCH_DELAY}")
         print(f"{'連線池大小':<35}: {cls.MAX_POOL_SIZE}")
         print("-" * 80)
-        print(f"{'DNS 快取時間 (秒)':<35}: {cls.DNS_CACHE_TTL}")
-        print(f"{'連線超時 (秒)':<35}: {cls.CONNECT_TIMEOUT}")
-        print(f"{'讀取超時 (秒)':<35}: {cls.READ_TIMEOUT}")
-        print(f"{'Keep-Alive 超時 (秒)':<35}: {cls.KEEPALIVE_TIMEOUT}")
-        print("-" * 80)
         print(f"{'重試次數':<35}: {cls.RETRY_ATTEMPTS}")
         print(f"{'重試間隔 (秒)':<35}: {cls.RETRY_DELAY}")
         print(f"{'去重失敗行為':<35}: {cls.DEDUP_FAILURE_BEHAVIOR}")
         print("-" * 80)
-        print(f"{'小型序列批次':<35}: {cls.BATCH_SIZE_SMALL} 張/批")
-        print(f"{'中型序列批次':<35}: {cls.BATCH_SIZE_MEDIUM} 張/批")
-        print(f"{'大型序列批次':<35}: {cls.BATCH_SIZE_LARGE} 張/批")
+        print(f"{'小型序列批次':<35}: {cls.BATCH_SIZE_SMALL} 張/批，並發 {cls.CONCURRENT_SMALL}")
+        print(f"{'中型序列批次':<35}: {cls.BATCH_SIZE_MEDIUM} 張/批，並發 {cls.CONCURRENT_MEDIUM}")
+        print(f"{'大型序列批次':<35}: {cls.BATCH_SIZE_LARGE} 張/批，並發 {cls.CONCURRENT_LARGE}")
         print("-" * 80)
         print(f"{'Job Queue 安全閾值':<35}: {cls.JOB_QUEUE_SAFE_THRESHOLD}")
         print(f"{'Job Queue 警告閾值':<35}: {cls.JOB_QUEUE_WARNING_THRESHOLD}")
@@ -327,28 +342,25 @@ class Settings:
         print(f"{'啟用去重檢查':<35}: {cls.ENABLE_DEDUPLICATION}")
         print(f"{'啟用 MD5 檢查':<35}: {cls.ENABLE_MD5_CHECK}")
         print(f"{'啟用資源監控':<35}: {cls.ENABLE_RESOURCE_MONITOR}")
-        print(f"{'車輛類型':<35}: {cls.VEHICLE_TYPE}")
         print("-" * 80)
-        print(f"{'啟用 OAuth 認證':<35}: {cls.ENABLE_AUTH}")
         print(f"{'啟用 API 認證':<35}: {cls.ENABLE_AUTH}")
         if cls.ENABLE_AUTH:
             token_display = cls.GEOVISIO_API_TOKEN[:20] + "..." if cls.GEOVISIO_API_TOKEN else "(未設定)"
             print(f"{'GeoVisio API Token':<35}: {token_display}")
         specified_dates = cls.get_specified_dates()
         if specified_dates:
-            dates_str = ', '.join(str(d) for d in specified_dates)
+            dates_str = ", ".join(str(d) for d in specified_dates)
             print(f"{'指定日期':<35}: {dates_str} ({len(specified_dates)} 天)")
         else:
             print(f"{'指定日期':<35}: (未設定)")
-        print(f"{'截止日期':<35}: {cls.CUTOFF_DATE}")
+        print(f"{'截止日期':<35}: {cls.CUTOFF_DATE or '(未設定)'}")
         print("=" * 80)
 
 
-# 全域設定實例
+# 全域設定實例（向後相容）
 settings = Settings()
 
 
 if __name__ == "__main__":
-    # 測試設定
     Settings.print_config()
     print(f"\n設定驗證: {'通過' if Settings.validate() else '失敗'}")
