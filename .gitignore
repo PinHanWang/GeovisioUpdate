@@ -10,3 +10,4 @@ logs/
 projects/
 **/*.log
 **/tempCodeRunnerFile.py
+.claude/settings.local.json
