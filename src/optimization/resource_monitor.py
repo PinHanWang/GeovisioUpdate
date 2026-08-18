@@ -161,8 +161,8 @@ class ResourceMonitor:
                 waited, max_wait, queue_count
             )
             
-            await asyncio.sleep(30)
-            waited += 30
+            await asyncio.sleep(self.check_interval)
+            waited += self.check_interval
         
         logger.error(
             "資源監控 - 等待超時 (%d 秒), Job Queue 仍有 %d 筆待處理",

@@ -507,11 +507,11 @@ class ImageUploader:
         else:
             batch_size, batch_delay = batch_config['batch_size'], batch_config['batch_delay']
         
-        logger.info("影像上傳 - 序列啟動: %d 張, Batch: %d, 併發限制: %d", sequence_size, batch_size, self.max_concurrent)
+        logger.info("影像上傳 - 序列啟動: %d 張, Batch: %d, 併發限制: %d", sequence_size, batch_size, batch_config['max_concurrent'])
 
         # 2. 分批處理
         batches = [df.iloc[i:i + batch_size] for i in range(0, len(df), batch_size)]
-        semaphore = asyncio.Semaphore(self.max_concurrent)
+        semaphore = asyncio.Semaphore(batch_config['max_concurrent'])
         
         total_successful = 0
         total_failed = 0

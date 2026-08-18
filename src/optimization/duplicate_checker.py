@@ -186,9 +186,11 @@ class DuplicateChecker:
                     Settings.DEDUP_PRELOAD_LIMIT
                 )
                 
-                # 儲存到快取
-                self.keyname_cache = {r['filename'] for r in records if r['filename']}
-                
+                # 儲存到快取 (逐筆加入既有 LRUCache,保留淘汰機制)
+                for r in records:
+                    if r['filename']:
+                        self.keyname_cache.add(r['filename'])
+
                 logger.info("重複性檢查 - 快取載入完成,檔名數量: %d", len(self.keyname_cache))
                 
         except Exception as e:
