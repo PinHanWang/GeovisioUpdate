@@ -8,6 +8,7 @@
 
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 from dotenv import load_dotenv
@@ -73,6 +74,16 @@ def _env_str(env_key: str, cfg_path: str, default: str) -> str:
         return v
     c = _cfg_get(cfg_path)
     return str(c) if c is not None else default
+
+
+# ============================================================
+@dataclass(frozen=True)
+class BatchTier:
+    """單一序列大小分級的批次配置"""
+    name: str
+    batch_size: int
+    batch_delay: int
+    max_concurrent: int
 
 
 # ============================================================
@@ -156,17 +167,28 @@ class Settings:
     SEQUENCE_SMALL_THRESHOLD: int  = _env_int("SEQUENCE_SMALL_THRESHOLD",  "batch.small_threshold",  500)
     SEQUENCE_MEDIUM_THRESHOLD: int = _env_int("SEQUENCE_MEDIUM_THRESHOLD", "batch.medium_threshold", 2000)
 
-    BATCH_SIZE_SMALL: int    = _env_int("BATCH_SIZE_SMALL",    "batch.small.size",       100)
-    BATCH_DELAY_SMALL: int   = _env_int("BATCH_DELAY_SMALL",   "batch.small.delay",      5)
-    CONCURRENT_SMALL: int    = _env_int("CONCURRENT_SMALL",    "batch.small.concurrent", 5)
-
-    BATCH_SIZE_MEDIUM: int   = _env_int("BATCH_SIZE_MEDIUM",   "batch.medium.size",       50)
-    BATCH_DELAY_MEDIUM: int  = _env_int("BATCH_DELAY_MEDIUM",  "batch.medium.delay",      10)
-    CONCURRENT_MEDIUM: int   = _env_int("CONCURRENT_MEDIUM",   "batch.medium.concurrent", 3)
-
-    BATCH_SIZE_LARGE: int    = _env_int("BATCH_SIZE_LARGE",    "batch.large.size",       30)
-    BATCH_DELAY_LARGE: int   = _env_int("BATCH_DELAY_LARGE",   "batch.large.delay",      15)
-    CONCURRENT_LARGE: int    = _env_int("CONCURRENT_LARGE",    "batch.large.concurrent", 2)
+    # 三個分級的批次配置整合成一個 tuple，取代原本 9 個扁平常數。
+    # env var 名稱與 config.toml 的 key 都維持不變，只有 Python 端的存取方式改變。
+    BATCH_TIERS: tuple = (
+        BatchTier(
+            "小型序列",
+            _env_int("BATCH_SIZE_SMALL", "batch.small.size", 100),
+            _env_int("BATCH_DELAY_SMALL", "batch.small.delay", 5),
+            _env_int("CONCURRENT_SMALL", "batch.small.concurrent", 5),
+        ),
+        BatchTier(
+            "中型序列",
+            _env_int("BATCH_SIZE_MEDIUM", "batch.medium.size", 50),
+            _env_int("BATCH_DELAY_MEDIUM", "batch.medium.delay", 10),
+            _env_int("CONCURRENT_MEDIUM", "batch.medium.concurrent", 3),
+        ),
+        BatchTier(
+            "大型序列",
+            _env_int("BATCH_SIZE_LARGE", "batch.large.size", 30),
+            _env_int("BATCH_DELAY_LARGE", "batch.large.delay", 15),
+            _env_int("CONCURRENT_LARGE", "batch.large.concurrent", 2),
+        ),
+    )
 
     # ========================================
     # 資源監控閾值（config.toml，可用 .env 覆蓋）
@@ -286,26 +308,21 @@ class Settings:
     def get_batch_config(cls, size: int) -> dict:
         """根據序列大小取得批次配置"""
         if size < cls.SEQUENCE_SMALL_THRESHOLD:
-            return {
-                "batch_size": cls.BATCH_SIZE_SMALL,
-                "batch_delay": cls.BATCH_DELAY_SMALL,
-                "max_concurrent": cls.CONCURRENT_SMALL,
-                "description": f"小型序列 (< {cls.SEQUENCE_SMALL_THRESHOLD} 張)",
-            }
+            tier = cls.BATCH_TIERS[0]
+            description = f"{tier.name} (< {cls.SEQUENCE_SMALL_THRESHOLD} 張)"
         elif size < cls.SEQUENCE_MEDIUM_THRESHOLD:
-            return {
-                "batch_size": cls.BATCH_SIZE_MEDIUM,
-                "batch_delay": cls.BATCH_DELAY_MEDIUM,
-                "max_concurrent": cls.CONCURRENT_MEDIUM,
-                "description": f"中型序列 ({cls.SEQUENCE_SMALL_THRESHOLD}–{cls.SEQUENCE_MEDIUM_THRESHOLD} 張)",
-            }
+            tier = cls.BATCH_TIERS[1]
+            description = f"{tier.name} ({cls.SEQUENCE_SMALL_THRESHOLD}–{cls.SEQUENCE_MEDIUM_THRESHOLD} 張)"
         else:
-            return {
-                "batch_size": cls.BATCH_SIZE_LARGE,
-                "batch_delay": cls.BATCH_DELAY_LARGE,
-                "max_concurrent": cls.CONCURRENT_LARGE,
-                "description": f"大型序列 (> {cls.SEQUENCE_MEDIUM_THRESHOLD} 張)",
-            }
+            tier = cls.BATCH_TIERS[2]
+            description = f"{tier.name} (> {cls.SEQUENCE_MEDIUM_THRESHOLD} 張)"
+
+        return {
+            "batch_size": tier.batch_size,
+            "batch_delay": tier.batch_delay,
+            "max_concurrent": tier.max_concurrent,
+            "description": description,
+        }
 
     @classmethod
     def print_config(cls):
@@ -333,9 +350,8 @@ class Settings:
         print(f"{'重試間隔 (秒)':<35}: {cls.RETRY_DELAY}")
         print(f"{'去重失敗行為':<35}: {cls.DEDUP_FAILURE_BEHAVIOR}")
         print("-" * 80)
-        print(f"{'小型序列批次':<35}: {cls.BATCH_SIZE_SMALL} 張/批，並發 {cls.CONCURRENT_SMALL}")
-        print(f"{'中型序列批次':<35}: {cls.BATCH_SIZE_MEDIUM} 張/批，並發 {cls.CONCURRENT_MEDIUM}")
-        print(f"{'大型序列批次':<35}: {cls.BATCH_SIZE_LARGE} 張/批，並發 {cls.CONCURRENT_LARGE}")
+        for tier in cls.BATCH_TIERS:
+            print(f"{tier.name + '批次':<35}: {tier.batch_size} 張/批，並發 {tier.max_concurrent}")
         print("-" * 80)
         print(f"{'Job Queue 安全閾值':<35}: {cls.JOB_QUEUE_SAFE_THRESHOLD}")
         print(f"{'Job Queue 警告閾值':<35}: {cls.JOB_QUEUE_WARNING_THRESHOLD}")

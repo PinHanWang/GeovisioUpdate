@@ -17,6 +17,7 @@ import os
 import gc  # 導入垃圾回收模組
 import asyncio
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, List, Any, TYPE_CHECKING
 import aiohttp
@@ -175,6 +176,33 @@ memory_gc = MemoryAwareGC(
 )
 
 # ========================================
+# 單張影像記錄
+# ========================================
+@dataclass(frozen=True)
+class ImageRecord:
+    """單張影像的上傳資訊，取代逐一展開傳遞的多個位置參數"""
+    keyname: str
+    gps_time: Any
+    gps_x: float
+    gps_y: float
+    speed: float
+    img_url: str
+    seq: int
+
+    @classmethod
+    def from_row(cls, row: "pd.Series", seq: int) -> "ImageRecord":
+        return cls(
+            keyname=row['KeyName'],
+            gps_time=row['GPSTime'],
+            gps_x=row['GPS_X'],
+            gps_y=row['GPS_Y'],
+            speed=row['speed'],
+            img_url=row['url'],
+            seq=seq,
+        )
+
+
+# ========================================
 # 影像上傳管理器
 # ========================================
 class ImageUploader:
@@ -268,24 +296,19 @@ class ImageUploader:
 
     async def _upload_single_image_impl(
         self,
-        session: aiohttp.ClientSession,
         collection_id: str,
-        keyname: str,
-        gps_time: Any,
-        gps_x: float,
-        gps_y: float,
-        speed: float,
-        img_url: str,
-        seq: int
+        record: ImageRecord,
     ) -> bool:
         """上傳單張影像的實際實現"""
-        # --- 新增：處理 Pandas Timestamp 序列化問題 ---
-        formatted_gps_time = gps_time
-        if hasattr(gps_time, 'isoformat'):
+        keyname = record.keyname
+
+        # --- 處理 Pandas Timestamp 序列化問題 ---
+        formatted_gps_time = record.gps_time
+        if hasattr(record.gps_time, 'isoformat'):
             # 如果是 Pandas Timestamp 或 datetime 物件，轉為字串
-            formatted_gps_time = gps_time.isoformat()
-        elif not isinstance(gps_time, str):
-            formatted_gps_time = str(gps_time)
+            formatted_gps_time = record.gps_time.isoformat()
+        elif not isinstance(record.gps_time, str):
+            formatted_gps_time = str(record.gps_time)
         # --------------------------------------------
 
         # 1. 去重檢查
@@ -293,9 +316,9 @@ class ImageUploader:
             try:
                 should_skip, reason = await self.dedup_checker.should_skip_upload(
                     keyname=keyname,
-                    img_url=img_url,
+                    img_url=record.img_url,
                     check_md5=self.enable_md5_check,
-                    session=session
+                    session=self.session
                 )
                 if should_skip:
                     logger.info("影像上傳 - 跳過重複: KeyName=%s, 原因=%s", keyname, reason)
@@ -308,11 +331,11 @@ class ImageUploader:
                 if self.dedup_failure_behavior == "skip":
                     logger.warning("影像上傳 - 重複性檢查失敗策略為 skip，跳過此影像: %s", keyname)
                     raise ImageAlreadyExistsError(f"重複性檢查失敗，保守跳過: {keyname}")
-        
+
         # 2. 準備上傳
         url = f"{self.api_client.base_url}/api/collections/{collection_id}/items"
         image_path = os.path.join(self.image_base_path, f'{keyname}.jpg')
-        
+
         if not os.path.exists(image_path):
             raise FileNotFoundError(f"影像檔案不存在: {image_path}")
 
@@ -323,15 +346,15 @@ class ImageUploader:
                 token = await self.api_client.get_token()
                 if token:
                     auth_headers["Authorization"] = f"Bearer {token}"
-            
+
             with open(image_path, 'rb') as img_file:
                 form_data = aiohttp.FormData()
-                form_data.add_field("position", str(seq))
+                form_data.add_field("position", str(record.seq))
                 form_data.add_field("isBlurred", "true")
                 form_data.add_field("override_capture_time", formatted_gps_time)
-                form_data.add_field("override_latitude", str(gps_y))
-                form_data.add_field("override_longitude", str(gps_x))
-                
+                form_data.add_field("override_latitude", str(record.gps_y))
+                form_data.add_field("override_longitude", str(record.gps_x))
+
                 form_data.add_field(
                     'picture',
                     img_file,
@@ -340,8 +363,8 @@ class ImageUploader:
                 )
 
                 timeout = ClientTimeout(total=self.upload_timeout)
-                
-                async with session.post(url, data=form_data, headers=auth_headers, timeout=timeout) as resp:
+
+                async with self.session.post(url, data=form_data, headers=auth_headers, timeout=timeout) as resp:
                     if resp.status in [200, 201, 202]:
                         logger.debug("影像上傳 - 成功: KeyName=%s", keyname)
                         return True
@@ -366,8 +389,8 @@ class ImageUploader:
 
         except ImageAlreadyExistsError:
             raise  # 直接拋出，讓上層處理
-        
-        except (ServerDisconnectedError, ClientConnectorError, 
+
+        except (ServerDisconnectedError, ClientConnectorError,
                 ServerTimeoutError, asyncio.TimeoutError,
                 ConnectionResetError, ClientOSError, OSError) as e:
             # ✅ 網路相關錯誤，記錄後重新拋出以觸發重試
@@ -376,7 +399,7 @@ class ImageUploader:
                 keyname, type(e).__name__, str(e)
             )
             raise RetryableUploadError(f"網路錯誤: {type(e).__name__} - {str(e)}")
-        
+
         except FileNotFoundError:
             raise  # 檔案不存在，不重試
 
@@ -392,16 +415,9 @@ class ImageUploader:
 
     async def safe_upload_image(
         self,
-        session: aiohttp.ClientSession,
         semaphore: asyncio.Semaphore,
         collection_id: str,
-        keyname: str,
-        gps_time: str,
-        gps_x: float,
-        gps_y: float,
-        speed: float,
-        img_url: str,
-        seq: int
+        record: ImageRecord,
     ) -> bool:
         """安全上傳影像（增強版重試機制）"""
         async with semaphore:
@@ -419,20 +435,17 @@ class ImageUploader:
                     retry_error_callback=self._log_retry_exhausted,  # 重試用盡時記錄
                     reraise=False  # 不重新拋出，讓 callback 處理
                 )(self._upload_single_image_impl)
-                
-                result = await upload_with_retry(
-                    session, collection_id, keyname, gps_time,
-                    gps_x, gps_y, speed, img_url, seq
-                )
+
+                result = await upload_with_retry(collection_id, record)
                 return True if result else False
-                
+
             except ImageAlreadyExistsError:
                 return True
             except Exception as e:
                 # 只有非重試類型的異常才會到這裡
                 logger.error(
                     "影像上傳 - 非預期錯誤 (非網路問題): KeyName=%s, 類型=%s, 錯誤=%s",
-                    keyname, type(e).__name__, str(e)
+                    record.keyname, type(e).__name__, str(e)
                 )
                 return False
 
@@ -441,12 +454,12 @@ class ImageUploader:
         exception = retry_state.outcome.exception()
         attempt = retry_state.attempt_number
         wait_time = retry_state.next_action.sleep if retry_state.next_action else 0
-        
-        # 嘗試從 args 取得 keyname
+
+        # args = (collection_id, record)，self 已綁定不計入
         keyname = "Unknown"
-        if hasattr(retry_state, 'args') and len(retry_state.args) >= 3:
-            keyname = retry_state.args[2]
-        
+        if hasattr(retry_state, 'args') and len(retry_state.args) >= 2:
+            keyname = retry_state.args[1].keyname
+
         logger.warning(
             "影像上傳 - 重試中: KeyName=%s, 第 %d 次嘗試, 等待 %.1f 秒, 錯誤類型=%s",
             keyname, attempt, wait_time, type(exception).__name__
@@ -455,14 +468,14 @@ class ImageUploader:
     def _log_retry_exhausted(self, retry_state):
         """重試用盡時的回調"""
         exception = retry_state.outcome.exception() if retry_state.outcome else None
-        
-        # 嘗試從 args 取得資訊
+
+        # args = (collection_id, record)，self 已綁定不計入
         keyname = "Unknown"
         collection_id = "Unknown"
-        if hasattr(retry_state, 'args') and len(retry_state.args) >= 3:
-            collection_id = retry_state.args[1]
-            keyname = retry_state.args[2]
-        
+        if hasattr(retry_state, 'args') and len(retry_state.args) >= 2:
+            collection_id = retry_state.args[0]
+            keyname = retry_state.args[1].keyname
+
         error_msg = str(exception) if exception else "Unknown error"
         error_type = type(exception).__name__ if exception else "Unknown"
         
@@ -539,11 +552,8 @@ class ImageUploader:
                     total_failed += 1
                     continue
 
-                task = self.safe_upload_image(
-                    self.session, semaphore, collection_id,
-                    row['KeyName'], row['GPSTime'], row['GPS_X'], row['GPS_Y'],
-                    row['speed'], row['url'], int(index) + 1
-                )
+                record = ImageRecord.from_row(row, int(index) + 1)
+                task = self.safe_upload_image(semaphore, collection_id, record)
                 tasks.append(task)
             
             if tasks:
