@@ -32,7 +32,6 @@ pip install -r requirements.txt
 ### 除錯與驗證
 ```bash
 python -m src.config.settings   # 印出所有目前設定值並驗證
-python src/test_api.py          # 測試 API 連線
 ```
 
 ## 系統架構
@@ -42,6 +41,7 @@ python src/test_api.py          # 測試 API 連線
 ```
 src/
 ├── main.py                  # 程式入口：啟動 Docker 監控 + UploadPipeline
+├── upload_pipeline.py       # 主流程控制：Session 生命週期、CSV→日期→序列迴圈
 ├── api/
 │   ├── geovisio_api_client.py  # GeoVisio REST API 封裝（認證、collection、keyname 查詢）
 │   ├── image_uploader.py       # 串流上傳器，含指數退避重試（tenacity）
@@ -49,21 +49,20 @@ src/
 ├── config/
 │   ├── settings.py             # 所有環境變數統一由 Settings class 管理
 │   └── logging_config.py       # 日誌設定
-├── core/
+├── preprocessing/
 │   ├── csv_encoding_converter.py   # 自動偵測並轉換 CSV 編碼（chardet）
-│   ├── image_data_preprocessor.py  # 解析 KeyName→GPS 時間、計算時間/距離差、分割序列
-│   └── failure_checker.py          # 失敗追蹤與報告
+│   └── gps_preprocessor.py         # 解析 KeyName→GPS 時間、計算時間/距離差、分割序列
 ├── optimization/
 │   ├── duplicate_checker.py        # LRU 快取 KeyName + MD5 去重（查 PostgreSQL）
 │   ├── resource_monitor.py         # 輪詢 Job Queue，積壓過多時自動節流
 │   └── sequence_batch_handler.py   # 依序列大小選擇批次策略並分批處理
-├── pipeline/
-│   └── upload_pipeline.py      # 主流程控制：Session 生命週期、CSV→日期→序列迴圈
-├── tools/
-│   ├── check_duplicates.py     # 獨立執行的重複影像報告產生器
-│   └── delete_all_duplicates.py # 獨立執行的重複影像刪除工具
-└── utils/
-    └── docker_monitor.py       # 背景任務：透過 Hawser 監控 GeoVisio 容器，Discord 告警
+├── reporting/
+│   └── failure_tracker.py      # 失敗追蹤與報告
+├── monitoring/
+│   └── docker_monitor.py       # 背景任務：透過 Hawser 監控 GeoVisio 容器，Discord 告警
+└── tools/
+    ├── check_duplicates.py     # 獨立執行的重複影像報告產生器
+    └── delete_all_duplicates.py # 獨立執行的重複影像刪除工具
 ```
 
 ### 資料流

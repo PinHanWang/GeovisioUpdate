@@ -109,7 +109,7 @@ LOGGING_CONFIG = {
         # 自訂模組 - 全部使用 DEBUG
         # logging.getLogger(__name__) 取得的是完整模組路徑，
         # key 必須是完整路徑才會匹配 (裸檔名不會生效)
-        'src.core.gps_preprocessor': {
+        'src.preprocessing.gps_preprocessor': {
             'level': 'DEBUG',
             'handlers': ['file_all', 'console'],
             'propagate': False,

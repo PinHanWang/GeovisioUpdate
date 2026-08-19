@@ -21,10 +21,10 @@ if str(_project_root) not in sys.path:
 # ========================================
 # 導入 Pipeline 與配置
 # ========================================
-from src.pipeline.upload_pipeline import GeoVisioUploadPipeline
+from src.upload_pipeline import GeoVisioUploadPipeline
 from src.config.logging_config import LOGGING_CONFIG
 from src.config.settings import Settings
-from src.utils.docker_monitor import HawserDockerMonitor
+from src.monitoring.docker_monitor import HawserDockerMonitor
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)

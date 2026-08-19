@@ -40,6 +40,7 @@ GeoVisio (Panoramax) 街景影像批次上傳系統，支援大量影像的自�
 GeovisioUpdate/
 ├── src/
 │   ├── main.py                         # 主程式入口
+│   ├── upload_pipeline.py              # 上傳流程主控
 │   │
 │   ├── api/                            # API 層
 │   │   ├── geovisio_api_client.py      # GeoVisio API 客戶端 (認證 & 請求)
@@ -50,29 +51,24 @@ GeovisioUpdate/
 │   │   ├── settings.py                 # 統一設定管理 (含認證設定)
 │   │   └── logging_config.py           # 日誌設定
 │   │
-│   ├── core/                           # 核心功能
+│   ├── preprocessing/                  # 資料前處理
 │   │   ├── csv_encoding_converter.py   # CSV 編碼轉換
-│   │   ├── image_data_preprocessor.py  # GPS 資料前處理 & 序列分割
-│   │   └── failure_checker.py          # 失敗追蹤器
+│   │   └── gps_preprocessor.py         # GPS 資料前處理 & 序列分割
 │   │
 │   ├── optimization/                   # 效能優化
 │   │   ├── duplicate_checker.py        # 去重檢查器
 │   │   ├── resource_monitor.py         # 資源監控器 (Job Queue)
 │   │   └── sequence_batch_handler.py   # 序列批次處理器
 │   │
-│   ├── pipeline/                       # 流程管理
-│   │   └── upload_pipeline.py          # 上傳流程主控
+│   ├── reporting/                      # 報告與追蹤
+│   │   └── failure_tracker.py          # 失敗追蹤器
 │   │
-│   ├── tools/                          # 工具程式
-│   │   ├── check_duplicates.py         # 重複影像檢查
-│   │   └── delete_all_duplicates.py    # 重複影像刪除
+│   ├── monitoring/                     # 監控
+│   │   └── docker_monitor.py           # Docker 容器監控 (Hawser)
 │   │
-│   └── utils/                          # 工具函式
-│       └── docker_monitor.py           # Docker 容器監控 (Hawser)
-│
-├── configs/                            # 靜態設定檔
-│   ├── carAngleTable.csv               # 車輛角度對照表
-│   └── iiiSignName.json                # 交通標誌名稱
+│   └── tools/                          # 工具程式
+│       ├── check_duplicates.py         # 重複影像檢查
+│       └── delete_all_duplicates.py    # 重複影像刪除
 │
 ├── data/                               # 輸入資料 (CSV)
 ├── logs/                               # 執行日誌 & 報告輸出
@@ -357,7 +353,7 @@ python -m src.tools.check_duplicates -f "20250829113426796_S9GLCPJ76.jpg"
 - `get_batch_config()` 根據序列大小回傳批次策略
 - `validate()` 驗證必要設定
 
-### 核心功能 (`src/core/`)
+### 資料前處理 (`src/preprocessing/`)
 
 **GPSDataPreprocessor** — GPS 資料前處理
 
@@ -365,6 +361,8 @@ python -m src.tools.check_duplicates -f "20250829113426796_S9GLCPJ76.jpg"
 - 計算相鄰影像的時間差和距離差
 - 根據閾值自動分割序列（CAR: 500s/200m, MOTORCYCLE: 300s/20m）
 - 支援 TWD97 ↔ WGS84 座標轉換
+
+### 報告與追蹤 (`src/reporting/`)
 
 **FailureTracker** — 失敗追蹤與報告
 
@@ -382,7 +380,7 @@ python -m src.tools.check_duplicates -f "20250829113426796_S9GLCPJ76.jpg"
 - Job Queue 積壓過多時自動減速
 - 等待資源恢復機制
 
-### 流程管理 (`src/pipeline/`)
+### 流程管理 (`src/upload_pipeline.py`)
 
 **GeoVisioUploadPipeline** — 主流程控制器
 

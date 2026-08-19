@@ -20,27 +20,27 @@ import pandas as pd
 
 # 導入自定義模組
 try:
-    from src.core.csv_encoding_converter import convert_csv_encoding
-    from src.core.gps_preprocessor import data_preprocessing
+    from src.preprocessing.csv_encoding_converter import convert_csv_encoding
+    from src.preprocessing.gps_preprocessor import data_preprocessing
     from src.config.logging_config import LOGGING_CONFIG
     from src.config.settings import Settings
     from src.api.geovisio_api_client import GeoVisioAPIClient
     from src.api.image_uploader import ImageUploader
-    from src.core.failure_tracker import get_failure_tracker
+    from src.reporting.failure_tracker import get_failure_tracker
     from src.optimization.duplicate_checker import get_duplicate_checker
     from src.optimization.resource_monitor import get_resource_monitor
     from src.optimization.sequence_batch_handler import get_sequence_batch_handler
 except ImportError:
-    from ..core.csv_encoding_converter import convert_csv_encoding
-    from ..core.gps_preprocessor import data_preprocessing
-    from ..config.logging_config import LOGGING_CONFIG
-    from ..config.settings import Settings
-    from ..api.geovisio_api_client import GeoVisioAPIClient
-    from ..api.image_uploader import ImageUploader
-    from ..core.failure_tracker import get_failure_tracker
-    from ..optimization.duplicate_checker import get_duplicate_checker
-    from ..optimization.resource_monitor import get_resource_monitor
-    from ..optimization.sequence_batch_handler import get_sequence_batch_handler
+    from .preprocessing.csv_encoding_converter import convert_csv_encoding
+    from .preprocessing.gps_preprocessor import data_preprocessing
+    from .config.logging_config import LOGGING_CONFIG
+    from .config.settings import Settings
+    from .api.geovisio_api_client import GeoVisioAPIClient
+    from .api.image_uploader import ImageUploader
+    from .reporting.failure_tracker import get_failure_tracker
+    from .optimization.duplicate_checker import get_duplicate_checker
+    from .optimization.resource_monitor import get_resource_monitor
+    from .optimization.sequence_batch_handler import get_sequence_batch_handler
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
