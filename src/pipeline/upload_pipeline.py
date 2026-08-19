@@ -173,11 +173,13 @@ class GeoVisioUploadPipeline:
         """處理 CSV 檔案並進行前處理"""
         if not csv_path.exists():
             raise FileNotFoundError(f"CSV 檔案不存在: {csv_path}")
-        convert_csv_encoding(csv_path, backup=False)
+        # 編碼偵測/轉換與 pandas 前處理都是同步阻塞操作，丟到執行緒池執行，
+        # 避免卡住同一個 event loop 上的 Docker 監控等背景協程
+        await asyncio.to_thread(convert_csv_encoding, csv_path, backup=False)
 
         logger.info("流程管理 - 開始前處理 CSV: %s", csv_path)
         params = _VEHICLE_THRESHOLDS.get(Settings.VEHICLE_TYPE, {})
-        return data_preprocessing(csv_path, **params)
+        return await asyncio.to_thread(data_preprocessing, csv_path, **params)
 
     def group_by_date(self, df: pd.DataFrame) -> pd.core.groupby.DataFrameGroupBy:
         """按日期分組資料"""

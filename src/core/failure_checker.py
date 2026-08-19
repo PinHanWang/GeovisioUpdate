@@ -9,6 +9,7 @@
 """
 
 import time
+import asyncio
 import logging
 from pathlib import Path
 from typing import List, Set, Dict, Optional
@@ -149,7 +150,9 @@ class FailureTracker:
             failure_csv_path = output_dir / f"{timestamp}_upload_failures.csv"
             
             try:
-                failure_df.to_csv(failure_csv_path, index=False, encoding='utf-8-sig')
+                await asyncio.to_thread(
+                    failure_df.to_csv, failure_csv_path, index=False, encoding='utf-8-sig'
+                )
                 logger.info(
                     "失敗報告 - 上傳失敗已儲存: %s (共 %d 筆)",
                     failure_csv_path, len(self.upload_failures)
@@ -185,9 +188,10 @@ class FailureTracker:
             collections_csv_path = output_dir / f"{timestamp}_failed_collections.csv"
             
             try:
-                collections_df.to_csv(
-                    collections_csv_path, 
-                    index=False, 
+                await asyncio.to_thread(
+                    collections_df.to_csv,
+                    collections_csv_path,
+                    index=False,
                     encoding='utf-8-sig'
                 )
                 logger.info(
