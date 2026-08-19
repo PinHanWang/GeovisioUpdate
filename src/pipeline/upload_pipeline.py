@@ -96,7 +96,9 @@ class GeoVisioUploadPipeline:
         # 1. 建立全局連線池
         connector = aiohttp.TCPConnector(
             limit=Settings.MAX_POOL_SIZE,
-            limit_per_host=10,
+            # GeoVisio API 只有單一主機，per-host 上限等於全域上限即可，
+            # 避免它比 MAX_CONCURRENT_UPLOADS 更早成為併發瓶頸
+            limit_per_host=Settings.MAX_POOL_SIZE,
             ttl_dns_cache=Settings.DNS_CACHE_TTL,
             keepalive_timeout=Settings.KEEPALIVE_TIMEOUT,
             enable_cleanup_closed=True,

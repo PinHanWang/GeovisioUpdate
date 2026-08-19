@@ -137,63 +137,43 @@ class GPSDataPreprocessor:
             新增 distance_to_prev 欄位的 DataFrame
         """
         logger.debug("資料預處理 - 開始計算影像間距離差")
-        
+
         # 建立座標轉換器 (WGS84 → TWD97)
         transformer = Transformer.from_crs(
             "epsg:4326",  # WGS84 (經緯度)
             "epsg:3826",  # TWD97 (平面座標)
             always_xy=True
         )
-        
-        def convert_to_twd97(lon: float, lat: float) -> tuple:
-            """
-            將 WGS84 座標轉換為 TWD97 座標
-            
-            Args:
-                lon: 經度
-                lat: 緯度
-                
-            Returns:
-                (x, y) TWD97 座標,失敗返回 (None, None)
-            """
-            try:
-                x, y = transformer.transform(lon, lat)
-                return x, y
-            except Exception as e:
-                logger.error(
-                    "資料預處理 - 座標轉換失敗: 經度=%.6f, 緯度=%.6f, 錯誤=%s",
-                    lon, lat, str(e)
-                )
-                return None, None
-        
+
         # 按時間排序
         df = df.sort_values(by='GPSTime')
-        
-        # 轉換為 TWD97 座標
-        df[['X_TWD97', 'Y_TWD97']] = df.apply(
-            lambda row: pd.Series(convert_to_twd97(row['GPS_X'], row['GPS_Y'])),
-            axis=1
-        )
-        
+
+        # 向量化座標轉換 (一次轉換整欄，取代逐列 apply)
+        x, y = transformer.transform(df['GPS_X'].to_numpy(), df['GPS_Y'].to_numpy())
+        df['X_TWD97'] = x
+        df['Y_TWD97'] = y
+
+        invalid_mask = ~np.isfinite(df['X_TWD97']) | ~np.isfinite(df['Y_TWD97'])
+        if invalid_mask.any():
+            logger.error(
+                "資料預處理 - 座標轉換失敗: %d 筆 (經緯度超出範圍或無效)",
+                int(invalid_mask.sum())
+            )
+
         # 取得前一筆資料的座標
         df['X_prev'] = df['X_TWD97'].shift()
         df['Y_prev'] = df['Y_TWD97'].shift()
-        
-        # 計算到前一點的距離 (歐式距離)
-        df['distance_to_prev'] = df.apply(
-            lambda row: np.round(
-                np.sqrt(
-                    (row['X_TWD97'] - row['X_prev']) ** 2 +
-                    (row['Y_TWD97'] - row['Y_prev']) ** 2
-                ),
-                3
-            ) if pd.notnull(row['X_prev']) else 0.0,
-            axis=1
-        )
-        
+
+        # 向量化計算到前一點的距離 (歐式距離)，第一筆 (無前一點) 設為 0
+        distance = np.sqrt(
+            (df['X_TWD97'] - df['X_prev']) ** 2 +
+            (df['Y_TWD97'] - df['Y_prev']) ** 2
+        ).round(3)
+        df['distance_to_prev'] = distance.fillna(0.0)
+
         # 移除暫存欄位
         df = df.drop(columns=['X_prev', 'Y_prev'])
-        
+
         logger.info("資料預處理 - 距離差計算完成")
         return df
     
@@ -211,44 +191,33 @@ class GPSDataPreprocessor:
             新增 group_id 欄位的 DataFrame
         """
         logger.debug("資料預處理 - 開始分割序列")
-        
+
         df = df.copy()
         df = df.sort_values(by='GPSTime')
-        
-        group_id = 0
-        group_ids = []
-        
-        for idx, row in df.iterrows():
-            # 第一筆資料
-            if idx == df.index[0]:
-                group_ids.append(group_id)
-                continue
-            
-            # 檢查是否需要分割序列
-            time_exceeded = row['GPSTime_diff'] > self.time_threshold
-            distance_exceeded = row['distance_to_prev'] > self.distance_threshold
-            
-            if time_exceeded or distance_exceeded:
-                group_id += 1
-                
-                if time_exceeded:
-                    logger.debug(
-                        "資料預處理 - 時間閾值超過,分割序列: "
-                        "索引=%s, 時間差=%.1f 秒",
-                        idx, row['GPSTime_diff']
-                    )
-                
-                if distance_exceeded:
-                    logger.debug(
-                        "資料預處理 - 距離閾值超過,分割序列: "
-                        "索引=%s, 距離=%.1f 公尺",
-                        idx, row['distance_to_prev']
-                    )
-            
-            group_ids.append(group_id)
-        
-        df['group_id'] = group_ids
-        
+
+        # 向量化判斷每一列是否需要分割 (取代逐列 iterrows)
+        time_exceeded = df['GPSTime_diff'] > self.time_threshold
+        distance_exceeded = df['distance_to_prev'] > self.distance_threshold
+        split_mask = time_exceeded | distance_exceeded
+
+        if len(split_mask) > 0:
+            split_mask.iloc[0] = False  # 第一筆一定是序列起點，不分割
+
+        # 只對實際發生分割的列印 debug log，不逐列印
+        for idx in df.index[split_mask]:
+            if time_exceeded.loc[idx]:
+                logger.debug(
+                    "資料預處理 - 時間閾值超過,分割序列: 索引=%s, 時間差=%.1f 秒",
+                    idx, df.loc[idx, 'GPSTime_diff']
+                )
+            if distance_exceeded.loc[idx]:
+                logger.debug(
+                    "資料預處理 - 距離閾值超過,分割序列: 索引=%s, 距離=%.1f 公尺",
+                    idx, df.loc[idx, 'distance_to_prev']
+                )
+
+        df['group_id'] = split_mask.cumsum()
+
         num_groups = df['group_id'].nunique()
         logger.info(
             "資料預處理 - 序列分割完成: 共 %d 個序列",
