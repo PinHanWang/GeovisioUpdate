@@ -327,6 +327,28 @@ class GeoVisioUploadPipeline:
 
         return None
 
+    async def _resource_aware_sleep(self, delay_seconds: int) -> None:
+        """
+        依 resource_monitor 狀態決定是否需要延遲
+
+        Job Queue 狀態安全時直接跳過固定延遲，加速閒置時的處理；
+        警告/危險時維持原本的延遲，讓伺服器有時間消化積壓。
+        """
+        if delay_seconds <= 0:
+            return
+
+        if Settings.ENABLE_RESOURCE_MONITOR and self.resource_monitor:
+            _, stats = await self.resource_monitor.check_resources()
+            if stats.get('status') == 'safe':
+                logger.debug("流程管理 - Job Queue 安全，跳過延遲 (%d 秒)", delay_seconds)
+                return
+            logger.info(
+                "流程管理 - Job Queue 未達安全水位 (%s)，維持延遲 %d 秒",
+                stats.get('status'), delay_seconds
+            )
+
+        await asyncio.sleep(delay_seconds)
+
     async def upload_date_group(
         self,
         collection_date: datetime.date,
@@ -372,7 +394,7 @@ class GeoVisioUploadPipeline:
                     failed_seq += 1
 
                 if count < total_seq:
-                    await asyncio.sleep(Settings.SEQUENCE_DELAY)
+                    await self._resource_aware_sleep(Settings.SEQUENCE_DELAY)
 
             except Exception as e:
                 logger.error(
@@ -431,7 +453,7 @@ class GeoVisioUploadPipeline:
                 gc.collect()
 
                 if date_count < num_dates:
-                    await asyncio.sleep(Settings.BATCH_DELAY)
+                    await self._resource_aware_sleep(Settings.BATCH_DELAY)
 
             except asyncio.CancelledError:
                 logger.warning("流程管理 - 收到取消訊號，準備儲存進度...")
@@ -467,8 +489,7 @@ class GeoVisioUploadPipeline:
                     await self._process_single_csv(csv_path, csv_index, csv_total)
 
                     if csv_index < csv_total:
-                        logger.info("流程管理 - CSV 間延遲 %d 秒...", Settings.BATCH_DELAY)
-                        await asyncio.sleep(Settings.BATCH_DELAY)
+                        await self._resource_aware_sleep(Settings.BATCH_DELAY)
 
                 except asyncio.CancelledError:
                     logger.warning("流程管理 - 任務被取消")
