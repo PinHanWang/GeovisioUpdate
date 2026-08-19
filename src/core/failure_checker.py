@@ -250,15 +250,6 @@ def get_failure_tracker() -> FailureTracker:
     return _failure_tracker_instance
 
 
-# ========================================
-# 向後相容 - 全域變數
-# (保留以相容舊程式碼,但建議使用 FailureTracker class)
-# ========================================
-failure_tracker = get_failure_tracker()
-upload_failures = failure_tracker.upload_failures
-collection_failures = failure_tracker.collection_failures
-
-
 if __name__ == "__main__":
     import asyncio
     

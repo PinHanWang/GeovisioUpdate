@@ -59,7 +59,7 @@ except ImportError:
 
 # Type hint 用 (避免循環 import)
 if TYPE_CHECKING:
-    from src.module.TMSUpdate.api.geovisio_api_client import GeoVisioAPIClient
+    from src.api.geovisio_api_client import GeoVisioAPIClient
 
 logger = logging.getLogger(__name__)
 

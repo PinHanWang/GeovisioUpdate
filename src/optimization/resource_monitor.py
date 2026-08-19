@@ -1,4 +1,3 @@
-# src/module/TMSUpdate/optimization/resource_monitor.py
 """
 簡化版資源監控 - 基於 Job Queue 積壓情況 (重構版)
 

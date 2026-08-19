@@ -1,4 +1,3 @@
-# src/module/TMSUpdate/optimization/sequence_batch_handler.py
 """
 大型 Sequence 處理模組 (重構版)
 
