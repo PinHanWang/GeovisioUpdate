@@ -110,7 +110,7 @@ pip install -r requirements.txt
 # 必要設定
 # ========================================
 TMS_GEOVISIO_URL=http://192.168.61.1:5001
-CSV_FILE_PATH=D:\path\to\your\data.csv
+CSV_FOLDER_PATH=D:\path\to\your\csv_folder
 IMAGE_BASE_PATH=D:\path\to\your\images
 
 # ========================================
@@ -241,88 +241,105 @@ python -m src.tools.check_duplicates -f "20250829113426796_S9GLCPJ76.jpg"
 
 ## 設定參數
 
-### 核心參數
+> 以下預設值皆取自目前的 `config.toml`／`src/config/settings.py`，環境特定值只在 `.env` 設定，可調校參數的預設值集中在 `config.toml`（可用 `.env` 同名變數覆蓋）。
+
+### 核心參數（.env，必填）
 
 | 參數 | 預設值 | 說明 |
 |------|--------|------|
 | `TMS_GEOVISIO_URL` | - | GeoVisio API 位址 (必填) |
-| `CSV_FILE_PATH` | - | 輸入 CSV 檔案路徑 (必填) |
+| `CSV_FOLDER_PATH` | - | 輸入 CSV 資料夾路徑，掃描資料夾內所有 `.csv`（優先於 `CSV_FILE_PATH`） |
+| `CSV_FILE_PATH` | - | 輸入單一 CSV 檔案路徑（向下相容，`CSV_FOLDER_PATH` 未設定時使用） |
 | `IMAGE_BASE_PATH` | - | 影像檔案根目錄 (必填) |
-| `DATABASE_URL` | - | PostgreSQL 連線字串 (去重用) |
+| `DATABASE_URL` | - | PostgreSQL 連線字串 (去重、續傳、資源監控用) |
+| `PROJECT_NAME` | DefaultProject | 專案名稱（用於 Collection 標題） |
 
-### 認證參數
+### 認證參數（.env）
 
 | 參數 | 預設值 | 說明 |
 |------|--------|------|
 | `ENABLE_AUTH` | false | 啟用 API 認證 |
 | `GEOVISIO_API_TOKEN` | - | GeoVisio 內部 JWT token |
 
-### 日期過濾
+### 日期過濾（.env，選用）
 
 | 參數 | 預設值 | 說明 |
 |------|--------|------|
 | `SPECIFIED_DATES` | (空) | 指定要處理的日期，逗號分隔 (最高優先) |
-| `CUTOFF_DATE` | 2025-06-01 | 截止日期，跳過早於此日期的資料 |
+| `CUTOFF_DATE` | (空) | 截止日期，跳過早於此日期的資料 |
 
 優先順序：`SPECIFIED_DATES` > `CUTOFF_DATE` > 處理所有日期
 
-### 效能參數
+### 效能參數（config.toml，可用 .env 覆蓋）
 
 | 參數 | 預設值 | 說明 |
 |------|--------|------|
-| `MAX_CONCURRENT_UPLOADS` | 5 | 最大並發上傳數 |
+| `MAX_CONCURRENT_UPLOADS` | 10 | 最大並發上傳數 |
 | `UPLOAD_TIMEOUT` | 60 | 單張圖片上傳超時 (秒) |
-| `SEQUENCE_DELAY` | 3 | 序列間延遲 (秒) |
-| `BATCH_DELAY` | 300 | 日期組間延遲 (秒) |
-| `MAX_POOL_SIZE` | 10 | HTTP 連線池大小 |
+| `SEQUENCE_DELAY` | 2 | 序列間延遲 (秒)，Job Queue 安全時自動跳過 |
+| `BATCH_DELAY` | 120 | 日期組間 / CSV 檔案間延遲 (秒)，Job Queue 安全時自動跳過 |
+| `MAX_POOL_SIZE` | 20 | HTTP 連線池大小（同時也是同主機連線上限） |
 
-### 連線與重試
+### 連線與重試（config.toml，可用 .env 覆蓋）
 
 | 參數 | 預設值 | 說明 |
 |------|--------|------|
 | `DNS_CACHE_TTL` | 300 | DNS 快取時間 (秒) |
 | `CONNECT_TIMEOUT` | 10 | 連線建立超時 (秒) |
 | `READ_TIMEOUT` | 60 | 讀取回應超時 (秒) |
-| `RETRY_ATTEMPTS` | 5 | 最大重試次數 |
+| `KEEPALIVE_TIMEOUT` | 30 | Keep-Alive 超時 (秒) |
+| `RETRY_ATTEMPTS` | 3 | 最大重試次數（僅網路類錯誤會重試，程式邏輯錯誤不重試） |
+| `RETRY_MIN_WAIT` | 1 | 重試最小等待時間 (秒，指數退避) |
+| `RETRY_MAX_WAIT` | 30 | 重試最大等待時間 (秒，指數退避上限) |
 
 ### 批次處理
 
-根據序列大小自動選擇策略：
+根據序列大小自動選擇策略（`Settings.BATCH_TIERS`）：
 
 | 分類 | 張數 | 批次大小 | 批次延遲 | 並發數 |
 |------|------|----------|----------|--------|
-| 小型 | < 500 | 50 | 5s | 3 |
-| 中型 | 500-2000 | 30 | 10s | 2 |
-| 大型 | > 2000 | 20 | 15s | 1 |
+| 小型 | < 500 | 100 | 5s | 5 |
+| 中型 | 500-2000 | 50 | 10s | 3 |
+| 大型 | > 2000 | 30 | 15s | 2 |
 
-### 資源監控
+### 資源監控（config.toml，可用 .env 覆蓋）
 
 | 參數 | 預設值 | 說明 |
 |------|--------|------|
-| `JOB_QUEUE_SAFE_THRESHOLD` | 100 | Job Queue 安全閾值 |
-| `JOB_QUEUE_WARNING_THRESHOLD` | 500 | Job Queue 警告閾值 |
-| `RESOURCE_CHECK_INTERVAL` | 60 | 資源檢查間隔 (秒) |
+| `JOB_QUEUE_SAFE_THRESHOLD` | 200 | Job Queue 安全閾值 |
+| `JOB_QUEUE_WARNING_THRESHOLD` | 1000 | Job Queue 警告閾值 |
+| `RESOURCE_CHECK_INTERVAL` | 60 | `wait_for_resources` 輪詢間隔 (秒) |
+| `RESOURCE_QUEUE_CACHE_TTL` | 5 | Job Queue 查詢結果快取秒數，避免序列開頭連續呼叫重複查 DB |
 
-### 功能開關
+### 去重設定（config.toml，可用 .env 覆蓋）
+
+| 參數 | 預設值 | 說明 |
+|------|--------|------|
+| `DEDUP_MAX_CACHE_SIZE` | 100000 | KeyName/MD5 LRU 快取上限 |
+| `DEDUP_FAILURE_BEHAVIOR` | continue | 去重檢查失敗時的行為：`continue`（繼續上傳）或 `skip`（保守跳過） |
+
+> 啟動時預載入的 KeyName 快取數量固定為 `DEDUP_MAX_CACHE_SIZE` 的一半，不需另外設定。
+
+### 功能開關（config.toml，可用 .env 覆蓋）
 
 | 參數 | 預設值 | 說明 |
 |------|--------|------|
 | `ENABLE_DEDUPLICATION` | true | 啟用去重檢查 |
 | `ENABLE_MD5_CHECK` | true | 啟用 MD5 檢查 |
 | `ENABLE_RESOURCE_MONITOR` | true | 啟用資源監控 |
-| `VEHICLE_TYPE` | CAR | 車輛類型 (CAR / MOTORCYCLE) |
+| `VEHICLE_TYPE` | CAR | 車輛類型 (CAR / MOTORCYCLE，`.env` 設定) |
 
 ### Docker 監控
 
-監控主機自動採用 `TMS_GEOVISIO_URL` 的主機位址（假設 GeoVisio API 與 Docker 監控主機同一台），不需要另外設定 `DOCKER_TARGET_IP`。
+監控主機自動採用 `TMS_GEOVISIO_URL` 的主機位址（假設 GeoVisio API 與 Docker 監控主機同一台），不需要另外設定監控主機 IP。
 
 | 參數 | 預設值 | 說明 |
 |------|--------|------|
-| `DOCKER_CONTAINER_NAME` | geovisio_dev-api-1 | 目標容器名稱 |
-| `MONITOR_INTERVAL` | 300 | 監控回報頻率 (秒) |
-| `MONITOR_MEM_THRESHOLD` | 3072 | 記憶體告警門檻 (MB) |
-| `DISCORD_BOT_TOKEN` | - | Discord 通知 Bot Token |
-| `DISCORD_CHANNEL_ID` | - | Discord 通知頻道 ID |
+| `DOCKER_CONTAINER_NAME` | geovisio_dev-api-1 | 目標容器名稱（config.toml，可用 .env 覆蓋） |
+| `MONITOR_INTERVAL` | 300 | 監控回報頻率 (秒，config.toml，可用 .env 覆蓋) |
+| `MONITOR_MEM_THRESHOLD_MB` | 3072 | 記憶體告警門檻 (MB，config.toml，可用 .env 覆蓋) |
+| `DISCORD_BOT_TOKEN` | - | Discord 通知 Bot Token (.env，選用) |
+| `DISCORD_CHANNEL_ID` | - | Discord 通知頻道 ID (.env，選用) |
 
 ---
 
