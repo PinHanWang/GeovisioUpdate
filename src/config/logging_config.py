@@ -107,22 +107,24 @@ LOGGING_CONFIG = {
     # ========================================
     'loggers': {
         # 自訂模組 - 全部使用 DEBUG
-        'image_data_preprocessor': {
+        # logging.getLogger(__name__) 取得的是完整模組路徑，
+        # key 必須是完整路徑才會匹配 (裸檔名不會生效)
+        'src.core.gps_preprocessor': {
             'level': 'DEBUG',
             'handlers': ['file_all', 'console'],
             'propagate': False,
         },
-        'duplicate_checker': {
+        'src.optimization.duplicate_checker': {
             'level': 'DEBUG',
             'handlers': ['file_all', 'console'],
             'propagate': False,
         },
-        'resource_monitor': {
+        'src.optimization.resource_monitor': {
             'level': 'DEBUG',
             'handlers': ['file_all', 'console'],
             'propagate': False,
         },
-        'geovisio_api_client': {
+        'src.api.geovisio_api_client': {
             'level': 'DEBUG',
             'handlers': ['file_all', 'console'],
             'propagate': False,

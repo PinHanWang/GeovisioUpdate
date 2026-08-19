@@ -364,7 +364,7 @@ if __name__ == "__main__":
     import sys
     
     if len(sys.argv) < 2:
-        print("使用方式: python image_data_preprocessor.py <csv_file>")
+        print("使用方式: python gps_preprocessor.py <csv_file>")
         sys.exit(1)
     
     csv_path = Path(sys.argv[1])

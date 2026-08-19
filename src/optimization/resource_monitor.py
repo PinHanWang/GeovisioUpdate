@@ -269,9 +269,17 @@ class ResourceMonitor:
 
 
 # ========================================
-# 全域實例 (單例模式) - 使用 Settings 配置
+# 全域實例 (單例模式，惰性初始化)
 # ========================================
-simple_resource_monitor = ResourceMonitor()
+_resource_monitor_instance = None
+
+
+def get_resource_monitor() -> ResourceMonitor:
+    """取得全域資源監控器實例"""
+    global _resource_monitor_instance
+    if _resource_monitor_instance is None:
+        _resource_monitor_instance = ResourceMonitor()
+    return _resource_monitor_instance
 
 
 if __name__ == "__main__":

@@ -21,26 +21,26 @@ import pandas as pd
 # 導入自定義模組
 try:
     from src.core.csv_encoding_converter import convert_csv_encoding
-    from src.core.image_data_preprocessor import data_preprocessing
+    from src.core.gps_preprocessor import data_preprocessing
     from src.config.logging_config import LOGGING_CONFIG
     from src.config.settings import Settings
     from src.api.geovisio_api_client import GeoVisioAPIClient
     from src.api.image_uploader import ImageUploader
-    from src.core.failure_checker import get_failure_tracker
+    from src.core.failure_tracker import get_failure_tracker
     from src.optimization.duplicate_checker import get_duplicate_checker
-    from src.optimization.resource_monitor import simple_resource_monitor
-    from src.optimization.sequence_batch_handler import large_seq_handler
+    from src.optimization.resource_monitor import get_resource_monitor
+    from src.optimization.sequence_batch_handler import get_sequence_batch_handler
 except ImportError:
     from ..core.csv_encoding_converter import convert_csv_encoding
-    from ..core.image_data_preprocessor import data_preprocessing
+    from ..core.gps_preprocessor import data_preprocessing
     from ..config.logging_config import LOGGING_CONFIG
     from ..config.settings import Settings
     from ..api.geovisio_api_client import GeoVisioAPIClient
     from ..api.image_uploader import ImageUploader
-    from ..core.failure_checker import get_failure_tracker
+    from ..core.failure_tracker import get_failure_tracker
     from ..optimization.duplicate_checker import get_duplicate_checker
-    from ..optimization.resource_monitor import simple_resource_monitor
-    from ..optimization.sequence_batch_handler import large_seq_handler
+    from ..optimization.resource_monitor import get_resource_monitor
+    from ..optimization.sequence_batch_handler import get_sequence_batch_handler
 
 # 設定日誌配置
 logging.config.dictConfig(LOGGING_CONFIG)
@@ -150,13 +150,13 @@ class GeoVisioUploadPipeline:
 
         if Settings.ENABLE_RESOURCE_MONITOR:
             try:
-                self.resource_monitor = simple_resource_monitor
+                self.resource_monitor = get_resource_monitor()
                 await self.resource_monitor.initialize()
             except Exception as e:
                 logger.error("資源監控器初始化失敗: %s", str(e))
                 self.resource_monitor = None
 
-        self.seq_handler = large_seq_handler
+        self.seq_handler = get_sequence_batch_handler()
 
         # 4. 初始化上傳器
         self.uploader = ImageUploader(

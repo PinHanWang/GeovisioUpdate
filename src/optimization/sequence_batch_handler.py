@@ -161,5 +161,13 @@ class SequenceBatchHandler:
         logger.info("序列批次 - 統計資訊已重置")
 
 
-# 全域實例 (單例模式)
-large_seq_handler = SequenceBatchHandler()
+# 全域實例 (單例模式，惰性初始化)
+_sequence_batch_handler_instance = None
+
+
+def get_sequence_batch_handler() -> SequenceBatchHandler:
+    """取得全域序列批次處理器實例"""
+    global _sequence_batch_handler_instance
+    if _sequence_batch_handler_instance is None:
+        _sequence_batch_handler_instance = SequenceBatchHandler()
+    return _sequence_batch_handler_instance
