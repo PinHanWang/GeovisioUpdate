@@ -21,6 +21,9 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Hawser 代理固定監聽埠，各部署環境不會變動，不需要獨立設定
+_HAWSER_PORT = 2376
+
 
 class HawserDockerMonitor:
     def __init__(self):
@@ -29,7 +32,7 @@ class HawserDockerMonitor:
         """
         # 從 Settings 讀取配置
         self.target_ip = Settings.DOCKER_TARGET_IP
-        self.hawser_port = Settings.HAWSER_PORT
+        self.hawser_port = _HAWSER_PORT
         
         # Hawser 代理標準 Docker API，不需要 /v1 前綴
         # 正確格式: http://{ip}:{port}/containers/{name}/stats?stream=false

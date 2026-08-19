@@ -288,7 +288,6 @@ python -m src.tools.check_duplicates -f "20250829113426796_S9GLCPJ76.jpg"
 | `CONNECT_TIMEOUT` | 10 | 連線建立超時 (秒) |
 | `READ_TIMEOUT` | 60 | 讀取回應超時 (秒) |
 | `RETRY_ATTEMPTS` | 5 | 最大重試次數 |
-| `RETRY_DELAY` | 2 | 重試間隔 (秒) |
 
 ### 批次處理
 
@@ -319,9 +318,10 @@ python -m src.tools.check_duplicates -f "20250829113426796_S9GLCPJ76.jpg"
 
 ### Docker 監控
 
+監控主機自動採用 `TMS_GEOVISIO_URL` 的主機位址（假設 GeoVisio API 與 Docker 監控主機同一台），不需要另外設定 `DOCKER_TARGET_IP`。
+
 | 參數 | 預設值 | 說明 |
 |------|--------|------|
-| `DOCKER_TARGET_IP` | 192.168.61.1 | Docker 主機 IP |
 | `DOCKER_CONTAINER_NAME` | geovisio_dev-api-1 | 目標容器名稱 |
 | `MONITOR_INTERVAL` | 300 | 監控回報頻率 (秒) |
 | `MONITOR_MEM_THRESHOLD` | 3072 | 記憶體告警門檻 (MB) |

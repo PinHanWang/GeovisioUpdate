@@ -251,9 +251,8 @@ class ImageUploader:
         
         # 重試設定
         self.retry_attempts = Settings.RETRY_ATTEMPTS
-        self.retry_min_wait = getattr(Settings, 'RETRY_MIN_WAIT', 1)  # 最小等待 1 秒
-        self.retry_max_wait = getattr(Settings, 'RETRY_MAX_WAIT', 30)  # 最大等待 30 秒
-        self.retry_delay = Settings.RETRY_DELAY
+        self.retry_min_wait = Settings.RETRY_MIN_WAIT
+        self.retry_max_wait = Settings.RETRY_MAX_WAIT
         
         # 去重失敗行為
         self.dedup_failure_behavior = Settings.DEDUP_FAILURE_BEHAVIOR

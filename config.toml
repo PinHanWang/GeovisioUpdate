@@ -56,9 +56,6 @@ min_wait = 1
 # 重試最大等待時間（秒）
 max_wait = 30
 
-# 重試間隔（秒，向後相容用）
-delay = 2
-
 # ============================================================
 # 批次處理策略
 # ============================================================
@@ -108,9 +105,6 @@ resource_query_cache_ttl = 5
 # KeyName/MD5 快取的最大數量
 max_cache_size = 100000
 
-# 啟動時預載入的快取數量
-preload_limit = 50000
-
 # 去重失敗行為："continue"（繼續上傳）或 "skip"（保守跳過）
 failure_behavior = "continue"
 
@@ -126,7 +120,6 @@ enable_resource_monitor = true
 # Docker 容器監控（選用）
 # ============================================================
 [docker]
-container_name = "geovisio_service"
-hawser_port = 2376
+container_name = "geovisio_dev-api-1"
 monitor_interval = 300        # 監控頻率（秒）
 monitor_mem_threshold_mb = 3072  # 記憶體告警門檻（3GB）

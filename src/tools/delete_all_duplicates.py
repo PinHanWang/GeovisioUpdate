@@ -4,8 +4,8 @@ GeoVisio Collection 刪除工具
 功能: 讀取重複報告 CSV，刪除 CSV 中出現的所有 Collection（及其下所有影像）
 
 使用方式:
-    python delete_collections.py -i keyname_duplicates.csv --dry-run  # 預覽
-    python delete_collections.py -i keyname_duplicates.csv            # 執行刪除
+    python -m src.tools.delete_all_duplicates -i keyname_duplicates.csv --dry-run  # 預覽
+    python -m src.tools.delete_all_duplicates -i keyname_duplicates.csv            # 執行刪除
 """
 
 import asyncio
@@ -16,22 +16,13 @@ from datetime import datetime
 from typing import Optional, Set, List, Dict
 import argparse
 import sys
-import os
 import ast
 import re
-from dotenv import load_dotenv
 
-# 載入環境變數
-script_dir = Path(__file__).resolve().parent
-project_root = script_dir
-for _ in range(5):
-    env_path = project_root / '.env'
-    if env_path.exists():
-        break
-    project_root = project_root.parent
-
-load_dotenv(env_path)
-DATABASE_URL = os.getenv('DATABASE_URL')
+try:
+    from src.config.settings import Settings
+except ImportError:
+    from ..config.settings import Settings
 
 
 def parse_date_from_filename(filename: str) -> Optional[str]:
@@ -249,7 +240,7 @@ async def main():
     parser = argparse.ArgumentParser(description='刪除 CSV 中出現的所有 Collection')
     parser.add_argument('-i', '--input', required=True, help='重複報告 CSV 檔案')
     parser.add_argument('--dry-run', action='store_true', help='預覽模式')
-    parser.add_argument('--db-url', default=DATABASE_URL, help='資料庫連線字串')
+    parser.add_argument('--db-url', default=Settings.DATABASE_URL, help='資料庫連線字串')
     
     args = parser.parse_args()
     

@@ -21,23 +21,11 @@ from datetime import datetime
 from typing import Optional, List, Dict
 import argparse
 import sys
-import os
-from dotenv import load_dotenv
 
-# 找到專案根目錄的 .env 檔案
-script_dir = Path(__file__).resolve().parent
-project_root = script_dir.parent.parent
-env_path = project_root / '.env'
-
-print(f"📂 專案根目錄: {project_root}")
-print(f"📄 .env 路徑: {env_path}")
-print(f"   .env 存在: {env_path.exists()}")
-
-# 載入環境變數
-load_dotenv(env_path)
-DATABASE_URL = os.getenv('DATABASE_URL')
-
-print(f"🔗 DATABASE_URL: {DATABASE_URL[:50] if DATABASE_URL else 'None'}...")
+try:
+    from src.config.settings import Settings
+except ImportError:
+    from ..config.settings import Settings
 
 
 class DuplicateChecker:
@@ -335,7 +323,7 @@ async def main():
     parser = argparse.ArgumentParser(description='GeoVisio 資料庫重複影像檢查工具')
     parser.add_argument('-o', '--output', default='output/duplicate_reports', help='報告輸出目錄')
     parser.add_argument('-f', '--filename', help='查詢特定檔名的重複詳情')
-    parser.add_argument('--db-url', default=DATABASE_URL, help='資料庫連線字串')
+    parser.add_argument('--db-url', default=Settings.DATABASE_URL, help='資料庫連線字串')
     
     args = parser.parse_args()
     

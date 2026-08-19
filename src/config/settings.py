@@ -11,6 +11,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -132,9 +133,11 @@ class Settings:
     DISCORD_CHANNEL_ID: Optional[str] = os.getenv("DISCORD_CHANNEL_ID")
 
     # ========================================
-    # Docker 監控 — 環境特定值（.env 設定）
+    # Docker 監控 — 主機位址
     # ========================================
-    DOCKER_TARGET_IP: str = os.getenv("DOCKER_TARGET_IP", "192.168.61.3")
+    # GeoVisio API 與 Docker 監控主機目前部署上總是同一台，
+    # 直接從 TMS_GEOVISIO_URL 解析 hostname，不再需要獨立設定
+    DOCKER_TARGET_IP: str = urlparse(TMS_GEOVISIO_URL).hostname or ""
 
     # ========================================
     # 上傳核心參數（config.toml，可用 .env 覆蓋）
@@ -159,7 +162,6 @@ class Settings:
     RETRY_ATTEMPTS: int  = _env_int("RETRY_ATTEMPTS",  "retry.attempts",  3)
     RETRY_MIN_WAIT: int  = _env_int("RETRY_MIN_WAIT",  "retry.min_wait",  1)
     RETRY_MAX_WAIT: int  = _env_int("RETRY_MAX_WAIT",  "retry.max_wait",  30)
-    RETRY_DELAY: int     = _env_int("RETRY_DELAY",     "retry.delay",     2)
 
     # ========================================
     # 批次處理策略（config.toml，可用 .env 覆蓋）
@@ -202,7 +204,8 @@ class Settings:
     # 去重檢查設定（config.toml，可用 .env 覆蓋）
     # ========================================
     DEDUP_MAX_CACHE_SIZE: int  = _env_int("DEDUP_MAX_CACHE_SIZE",  "dedup.max_cache_size",  100000)
-    DEDUP_PRELOAD_LIMIT: int   = _env_int("DEDUP_PRELOAD_LIMIT",   "dedup.preload_limit",   50000)
+    # 預載量不該超過快取容量，固定取快取容量的一半，不需要獨立設定
+    DEDUP_PRELOAD_LIMIT: int   = DEDUP_MAX_CACHE_SIZE // 2
     DEDUP_FAILURE_BEHAVIOR: str = _env_str("DEDUP_FAILURE_BEHAVIOR", "dedup.failure_behavior", "continue")
 
     # ========================================
@@ -215,8 +218,7 @@ class Settings:
     # ========================================
     # Docker 容器監控 — 調校值（config.toml，可用 .env 覆蓋）
     # ========================================
-    DOCKER_CONTAINER_NAME: str       = _env_str("DOCKER_CONTAINER_NAME",       "docker.container_name",         "geovisio_service")
-    HAWSER_PORT: int                 = _env_int("HAWSER_PORT",                 "docker.hawser_port",            2376)
+    DOCKER_CONTAINER_NAME: str       = _env_str("DOCKER_CONTAINER_NAME",       "docker.container_name",         "geovisio_dev-api-1")
     MONITOR_INTERVAL: int            = _env_int("MONITOR_INTERVAL",            "docker.monitor_interval",       300)
     MONITOR_MEM_THRESHOLD_MB: int    = _env_int("MONITOR_MEM_THRESHOLD_MB",    "docker.monitor_mem_threshold_mb", 3072)
 
@@ -347,7 +349,6 @@ class Settings:
         print(f"{'連線池大小':<35}: {cls.MAX_POOL_SIZE}")
         print("-" * 80)
         print(f"{'重試次數':<35}: {cls.RETRY_ATTEMPTS}")
-        print(f"{'重試間隔 (秒)':<35}: {cls.RETRY_DELAY}")
         print(f"{'去重失敗行為':<35}: {cls.DEDUP_FAILURE_BEHAVIOR}")
         print("-" * 80)
         for tier in cls.BATCH_TIERS:
