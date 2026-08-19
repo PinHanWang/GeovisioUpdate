@@ -12,6 +12,7 @@
 
 import asyncio
 import logging
+import time
 import asyncpg
 from typing import Optional, Dict, Tuple
 
@@ -37,13 +38,17 @@ class ResourceMonitor:
         safe_threshold: Optional[int] = None,
         warning_threshold: Optional[int] = None,
         check_interval: Optional[int] = None,
+        query_cache_ttl: Optional[int] = None,
     ):
         # 優先使用傳入的參數，否則從 Settings 讀取
         self.db_url = db_url or Settings.DATABASE_URL
         self.safe_threshold = safe_threshold or Settings.JOB_QUEUE_SAFE_THRESHOLD
         self.warning_threshold = warning_threshold or Settings.JOB_QUEUE_WARNING_THRESHOLD
         self.check_interval = check_interval or Settings.RESOURCE_CHECK_INTERVAL
+        self.query_cache_ttl = query_cache_ttl or Settings.RESOURCE_QUEUE_CACHE_TTL
         self.db_pool = None
+        self._cached_result: Optional[Tuple[bool, Dict]] = None
+        self._cache_time: float = 0.0
         
         logger.info(
             "資源監控 - 配置: 安全閾值=%d, 警告閾值=%d, 檢查間隔=%d秒",
@@ -56,8 +61,8 @@ class ResourceMonitor:
             try:
                 self.db_pool = await asyncpg.create_pool(
                     self.db_url,
-                    min_size=1,
-                    max_size=3,
+                    min_size=2,
+                    max_size=5,
                     timeout=30
                 )
                 logger.info("資源監控 - 初始化成功")
@@ -96,12 +101,19 @@ class ResourceMonitor:
     async def check_resources(self) -> Tuple[bool, Dict]:
         """
         檢查資源狀態 (基於 Job Queue)
-        
+
+        短時間內 (query_cache_ttl 秒) 重複呼叫會直接回傳上次結果，
+        避免同一序列開頭連續呼叫 (get_dynamic_batch_size/delay + 批次前檢查) 疊加多次 DB 查詢。
+
         Returns:
             (is_safe, stats): 是否安全繼續上傳, 統計資訊
         """
+        now = time.monotonic()
+        if self._cached_result is not None and (now - self._cache_time) < self.query_cache_ttl:
+            return self._cached_result
+
         queue_count = await self.get_job_queue_count()
-        
+
         stats = {
             'job_queue_count': queue_count,
             'status': 'unknown',
@@ -129,7 +141,9 @@ class ResourceMonitor:
                 "資源監控 - Job Queue 嚴重積壓: %d 筆 (需要等待處理)",
                 queue_count
             )
-        
+
+        self._cached_result = (is_safe, stats)
+        self._cache_time = now
         return is_safe, stats
     
     async def wait_for_resources(self, max_wait: int = 300) -> bool:

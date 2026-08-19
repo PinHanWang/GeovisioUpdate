@@ -174,6 +174,7 @@ class Settings:
     JOB_QUEUE_SAFE_THRESHOLD: int    = _env_int("JOB_QUEUE_SAFE_THRESHOLD",    "monitor.job_queue_safe_threshold",    200)
     JOB_QUEUE_WARNING_THRESHOLD: int = _env_int("JOB_QUEUE_WARNING_THRESHOLD", "monitor.job_queue_warning_threshold", 1000)
     RESOURCE_CHECK_INTERVAL: int     = _env_int("RESOURCE_CHECK_INTERVAL",     "monitor.resource_check_interval",     60)
+    RESOURCE_QUEUE_CACHE_TTL: int    = _env_int("RESOURCE_QUEUE_CACHE_TTL",    "monitor.resource_query_cache_ttl",    5)
 
     # ========================================
     # 去重檢查設定（config.toml，可用 .env 覆蓋）

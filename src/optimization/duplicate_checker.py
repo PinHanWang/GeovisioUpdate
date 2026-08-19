@@ -136,8 +136,8 @@ class DuplicateChecker:
             # 建立連線池
             self.db_pool = await asyncpg.create_pool(
                 self.db_url,
-                min_size=2,
-                max_size=5,
+                min_size=3,
+                max_size=10,
                 timeout=30
             )
             logger.info("重複性檢查 - 資料庫連線池建立成功")
@@ -195,7 +195,50 @@ class DuplicateChecker:
                 
         except Exception as e:
             logger.error("重複性檢查 - 快取載入失敗: %s", str(e))
-    
+
+    async def preload_keynames(self, keynames: list) -> None:
+        """
+        批次預載一批 KeyName 的存在狀態到快取
+
+        取代逐筆呼叫 check_keyname_exists 造成的 N+1 查詢：
+        一個批次只送 1 次 IN 查詢，命中的直接寫入快取，
+        後續同批次內每張影像各自呼叫 check_keyname_exists 時就會直接命中快取。
+
+        Args:
+            keynames: 這個批次要上傳的 KeyName 清單 (不含副檔名)
+        """
+        if not self.db_pool or not keynames:
+            return
+
+        filenames = [f"{k}.jpg" for k in keynames if k]
+        # 已在快取中的不必再查
+        to_check = [f for f in filenames if f not in self.keyname_cache]
+        if not to_check:
+            return
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                records = await conn.fetch(
+                    """
+                    SELECT metadata->>'originalFileName' AS filename
+                    FROM pictures
+                    WHERE metadata->>'originalFileName' = ANY($1::text[])
+                    """,
+                    to_check
+                )
+
+            for r in records:
+                if r['filename']:
+                    self.keyname_cache.add(r['filename'])
+
+            logger.debug(
+                "重複性檢查 - 批次預載完成: 查詢 %d 筆, 命中 %d 筆",
+                len(to_check), len(records)
+            )
+
+        except Exception as e:
+            logger.error("重複性檢查 - 批次預載 KeyName 失敗: %s", str(e))
+
     @staticmethod
     def calculate_md5_from_bytes(data: bytes) -> str:
         """

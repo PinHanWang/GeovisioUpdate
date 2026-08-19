@@ -98,6 +98,9 @@ job_queue_warning_threshold = 1000
 # 資源狀態檢查間隔（秒）
 resource_check_interval = 60
 
+# Job Queue 查詢結果快取時間（秒）—— 同一序列開頭連續呼叫 check_resources 時避免重複查 DB
+resource_query_cache_ttl = 5
+
 # ============================================================
 # 去重檢查設定
 # ============================================================

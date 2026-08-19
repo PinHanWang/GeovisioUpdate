@@ -64,7 +64,10 @@ class GeoVisioAPIClient:
         
         # 修正編碼問題
         self.headers = {"Accept-Encoding": "gzip, deflate, identity"}
-        
+
+        # Collection 清單快取 (供續傳查詢重用，避免同一次執行內重複全量拉取)
+        self._collections_cache: Optional[Dict] = None
+
         if auth_config:
             logger.info("API 客戶端 - 初始化完成, URL: %s, 認證: 啟用 (static token)", self.base_url)
         else:
@@ -157,11 +160,23 @@ class GeoVisioAPIClient:
         except Exception as e:
             logger.warning("無法儲存 API 快取檔案: %s", str(e))
 
-    async def get_all_collections(self) -> Optional[Dict]:
-        """取得所有 Collection"""
+    async def get_all_collections(self, use_cache: bool = False) -> Optional[Dict]:
+        """
+        取得所有 Collection
+
+        Args:
+            use_cache: True 時若本次執行已快取過，直接回傳快取結果，
+                不再重新拉取。適用於同一次執行內只需要「已存在的 Collection 清單」
+                的場景 (例如續傳搜尋)，本次執行才建立的 Collection 不會出現在快取中，
+                但那些 Collection 本來就不會被續傳搜尋用到。
+        """
+        if use_cache and self._collections_cache is not None:
+            return self._collections_cache
+
         data = await self._request("GET", "/api/collections")
         if data:
             await self._save_json_output(data, 'all_collections.json')
+            self._collections_cache = data
         return data
     
     async def get_collection_by_id(self, collection_id: str) -> Optional[Dict]:
@@ -317,7 +332,7 @@ class GeoVisioAPIClient:
             Collection 字典，或 None
         """
         try:
-            data = await self.get_all_collections()
+            data = await self.get_all_collections(use_cache=True)
             if not data:
                 return None
             

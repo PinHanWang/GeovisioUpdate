@@ -527,13 +527,18 @@ class ImageUploader:
                     logger.warning("影像上傳 - 系統資源緊張, 等待恢復...")
                     await self.resource_monitor.wait_for_resources(max_wait=300)
 
+            # 批次預載 KeyName 存在狀態：1 次 IN 查詢取代批次內逐張的個別查詢
+            if self.enable_deduplication and self.dedup_checker:
+                batch_keynames = batch_df['KeyName'].dropna().tolist()
+                await self.dedup_checker.preload_keynames(batch_keynames)
+
             tasks = []
             for index, row in batch_df.iterrows():
                 # 欄位完整性檢查
                 if pd.isna(row.get('KeyName')) or pd.isna(row.get('GPSTime')):
                     total_failed += 1
                     continue
-                
+
                 task = self.safe_upload_image(
                     self.session, semaphore, collection_id,
                     row['KeyName'], row['GPSTime'], row['GPS_X'], row['GPS_Y'],
