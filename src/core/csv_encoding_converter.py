@@ -9,7 +9,9 @@ CSV 編碼統一轉換工具
 """
 
 import os
+import threading
 import chardet
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Tuple, Optional
 import logging
@@ -42,6 +44,8 @@ class CSVEncodingConverter:
         self.converted_count = 0
         self.failed_count = 0
         self.skipped_count = 0
+        # convert_directory 平行處理多檔時，多個執行緒會同時更新上面三個計數器
+        self._counter_lock = threading.Lock()
     
     def detect_encoding(self, file_path: Path) -> Optional[str]:
         """
@@ -95,7 +99,8 @@ class CSVEncodingConverter:
                 
                 if source_encoding is None:
                     logger.error("編碼轉換 - 無法偵測編碼類型: %s", file_path.name)
-                    self.failed_count += 1
+                    with self._counter_lock:
+                        self.failed_count += 1
                     return False
             
             # 如果已經是目標編碼,檢查是否有 BOM
@@ -113,7 +118,8 @@ class CSVEncodingConverter:
                 else:
                     # 已經是 UTF-8 且無 BOM,跳過
                     logger.debug("編碼轉換 - 跳過 (已是 UTF-8): %s", file_path.name)
-                    self.skipped_count += 1
+                    with self._counter_lock:
+                        self.skipped_count += 1
                     return True
             
             # 備份原始檔案
@@ -142,28 +148,32 @@ class CSVEncodingConverter:
                 "編碼轉換 - 轉換成功: 檔案=%s, 從 %s 轉為 %s",
                 file_path.name, source_encoding, target_encoding
             )
-            self.converted_count += 1
+            with self._counter_lock:
+                self.converted_count += 1
             return True
-            
+
         except Exception as e:
             logger.error("編碼轉換 - 轉換失敗: 檔案=%s, 錯誤=%s", file_path.name, str(e))
-            self.failed_count += 1
+            with self._counter_lock:
+                self.failed_count += 1
             return False
     
     def convert_directory(
-        self, 
+        self,
         directory: Path,
         pattern: str = '*.csv',
-        recursive: bool = False
+        recursive: bool = False,
+        max_workers: int = 4
     ) -> Tuple[int, int, int]:
         """
-        批次轉換目錄下的所有 CSV 檔案
-        
+        批次轉換目錄下的所有 CSV 檔案 (I/O bound，用執行緒池平行處理)
+
         Args:
             directory: 目錄路徑
             pattern: 檔案匹配模式 (預設: *.csv)
             recursive: 是否遞迴處理子目錄 (預設: False)
-            
+            max_workers: 平行處理的執行緒數量 (預設: 4)
+
         Returns:
             (轉換成功數, 跳過數, 失敗數)
         """
@@ -171,24 +181,40 @@ class CSVEncodingConverter:
         self.converted_count = 0
         self.skipped_count = 0
         self.failed_count = 0
-        
+
         # 查找所有 CSV 檔案
         if recursive:
             csv_files = list(directory.rglob(pattern))
         else:
             csv_files = list(directory.glob(pattern))
-        
+
         if not csv_files:
             logger.warning("編碼轉換 - 未找到檔案: 目錄=%s, 模式=%s", directory, pattern)
             return (0, 0, 0)
-        
-        logger.info("編碼轉換 - 找到 %d 個 CSV 檔案,開始批次處理", len(csv_files))
-        
-        # 逐個轉換
-        for csv_file in csv_files:
-            logger.info("編碼轉換 - 處理檔案: %s", csv_file.name)
-            self.convert_to_utf8(csv_file)
-        
+
+        logger.info(
+            "編碼轉換 - 找到 %d 個 CSV 檔案,開始平行批次處理 (執行緒數=%d)",
+            len(csv_files), max_workers
+        )
+
+        # 平行轉換 (各檔案獨立，計數器由 _counter_lock 保護)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(self.convert_to_utf8, csv_file): csv_file
+                for csv_file in csv_files
+            }
+            for future in as_completed(futures):
+                csv_file = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error(
+                        "編碼轉換 - 處理檔案發生未預期錯誤: 檔案=%s, 錯誤=%s",
+                        csv_file.name, str(e)
+                    )
+                    with self._counter_lock:
+                        self.failed_count += 1
+
         # 顯示統計
         logger.info("=" * 80)
         logger.info("編碼轉換統計摘要")
