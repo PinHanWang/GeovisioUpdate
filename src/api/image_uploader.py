@@ -379,16 +379,16 @@ class ImageUploader:
         
         except FileNotFoundError:
             raise  # 檔案不存在，不重試
-        
+
         except Exception as e:
-            # 其他未預期錯誤，記錄完整資訊
+            # 未列入 RETRYABLE_EXCEPTIONS 的例外（如程式邏輯錯誤、資料格式錯誤）
+            # 視為永久性失敗，記錄完整資訊後直接失敗，不重試
             logger.error(
-                "影像上傳 - 未預期例外: KeyName=%s, 類型=%s, 錯誤=%s",
+                "影像上傳 - 非預期例外 (視為永久性失敗，不重試): KeyName=%s, 類型=%s, 錯誤=%s",
                 keyname, type(e).__name__, str(e),
                 exc_info=True  # 包含完整 traceback
             )
-            # 將未知錯誤也包裝成可重試（保守策略）
-            raise RetryableUploadError(f"未預期錯誤: {type(e).__name__} - {str(e)}")
+            raise
 
     async def safe_upload_image(
         self,

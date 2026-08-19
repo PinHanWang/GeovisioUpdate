@@ -16,12 +16,14 @@
 
 import hashlib
 import os
+import asyncio
 import logging
 from pathlib import Path
 from collections import OrderedDict
 from typing import Optional, Set, Tuple
 import aiohttp
 import asyncpg
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # 導入設定
 try:
@@ -34,6 +36,17 @@ logger = logging.getLogger(__name__)
 
 # 載入環境變數
 IMAGE_BASE_PATH = Settings.IMAGE_BASE_PATH
+
+# MD5 下載時視為暫時性、值得重試的網路錯誤
+MD5_DOWNLOAD_RETRYABLE_EXCEPTIONS = (
+    aiohttp.ServerDisconnectedError,
+    aiohttp.ClientConnectorError,
+    aiohttp.ServerTimeoutError,
+    aiohttp.ClientOSError,
+    asyncio.TimeoutError,
+    ConnectionResetError,
+    OSError,
+)
 
 
 class LRUCache:
@@ -275,43 +288,51 @@ class DuplicateChecker:
         
         return md5_hash.hexdigest()
     
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(MD5_DOWNLOAD_RETRYABLE_EXCEPTIONS),
+    )
+    async def _download_and_hash(self, url: str, session: aiohttp.ClientSession) -> Optional[str]:
+        """下載影像並計算 MD5 (內部方法，網路錯誤會被 tenacity 重試最多 3 次)"""
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            if resp.status == 200:
+                data = await resp.read()
+                md5 = self.calculate_md5_from_bytes(data)
+                logger.debug("MD5 計算 - 來源: URL, MD5: %s..., 大小: %d bytes",
+                           md5[:8], len(data))
+                return md5
+            else:
+                logger.error("MD5 計算 - URL 下載失敗,狀態碼: %d, URL: %s",
+                           resp.status, url)
+                return None
+
     async def calculate_md5_from_url(
-        self, 
-        url: str, 
+        self,
+        url: str,
         session: Optional[aiohttp.ClientSession] = None
     ) -> Optional[str]:
         """
         從 URL 下載並計算 MD5
-        
+
         Args:
             url: 影像 URL
             session: 可選的 aiohttp session (重用連線)
-            
+
         Returns:
             MD5 字串,失敗時返回 None
         """
         close_session = False
-        
+
         try:
             if session is None:
                 session = aiohttp.ClientSession()
                 close_session = True
-            
-            # 下載檔案
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-                if resp.status == 200:
-                    data = await resp.read()
-                    md5 = self.calculate_md5_from_bytes(data)
-                    logger.debug("MD5 計算 - 來源: URL, MD5: %s..., 大小: %d bytes", 
-                               md5[:8], len(data))
-                    return md5
-                else:
-                    logger.error("MD5 計算 - URL 下載失敗,狀態碼: %d, URL: %s", 
-                               resp.status, url)
-                    return None
-        
+
+            return await self._download_and_hash(url, session)
+
         except Exception as e:
-            logger.error("MD5 計算 - 從 URL 計算失敗: %s", str(e))
+            logger.error("MD5 計算 - 從 URL 計算失敗 (已重試): %s", str(e))
             return None
         
         finally:
